@@ -4,6 +4,7 @@ import models
 import schemas
 import auth_utils
 from database import engine, get_db
+from typing import Optional
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -76,6 +77,98 @@ def approve_user(user_id: int, db: Session = Depends(get_db)):
     
     return {"message": f"User '{user.username}' has been approved and notified."}
 
+@app.post("/inventory", response_model=schemas.InventoryItemResponse)
+def add_inventory_item(item: schemas.InventoryItemCreate, db: Session = Depends(get_db)):
+    """Admin workflow: Add a new physical part to the warehouse."""
+    
+    # 1. Check if the explicitly provided item_code already exists
+    existing_code = db.query(models.InventoryItem).filter(models.InventoryItem.item_code == item.item_code).first()
+    if existing_code:
+        raise HTTPException(status_code=400, detail=f"Item code {item.item_code} is already in use.")
+
+    # 2. Check for duplicate serial numbers
+    existing_serial = db.query(models.InventoryItem).filter(models.InventoryItem.serial_number == item.serial_number).first()
+    if existing_serial:
+        raise HTTPException(status_code=400, detail=f"An item with this Serial Number ({item.serial_number}) already exists.")
+    
+    # Map the validated Pydantic data to SQLAlchemy database model
+    new_item = models.InventoryItem(
+        item_code=item.item_code, 
+        item_name=item.item_name,
+        serial_number=item.serial_number,
+        quantity=item.quantity,
+        price=item.price,
+        description=item.description
+    )
+    
+    db.add(new_item)
+    db.commit()
+    db.refresh(new_item)
+    
+    return new_item
+
+
+@app.get("/inventory", response_model=list[schemas.InventoryItemResponse])
+def get_all_inventory(
+    item_code: Optional[int] = None, 
+    item_name: Optional[str] = None, 
+    serial_number: Optional[str] = None, 
+    db: Session = Depends(get_db)
+):
+    """Workflow: Fetch items. Allows searching by code, name, or serial number."""
+    
+    # 1. Base query that targets the whole table
+    query = db.query(models.InventoryItem)
+    
+    # 2. Dynamically apply filters if the admin provided them in the URL
+    if item_code is not None:
+        query = query.filter(models.InventoryItem.item_code == item_code)
+        
+    if item_name:
+        query = query.filter(models.InventoryItem.item_name.ilike(f"%{item_name}%"))
+        
+    if serial_number:
+        query = query.filter(models.InventoryItem.serial_number == serial_number)
+        
+    # 3. Execute the final filtered query
+    items = query.all()
+    return items
+
+
+@app.put("/inventory/{item_code}", response_model=schemas.InventoryItemResponse)
+def update_inventory_item(item_code: int, update_data: schemas.InventoryItemUpdate, db: Session = Depends(get_db)):
+    """Admin workflow: Update the stock quantity, price, or details of an existing item."""
+    
+    db_item = db.query(models.InventoryItem).filter(models.InventoryItem.item_code == item_code).first()
+    if not db_item:
+        raise HTTPException(status_code=404, detail="Item not found in inventory.")
+    
+    update_dict = update_data.model_dump(exclude_unset=True)
+    
+    for key, value in update_dict.items():
+        setattr(db_item, key, value)
+        
+    db.commit()
+    db.refresh(db_item)
+    
+    return db_item
+
+@app.delete("/inventory/{item_code}")
+def delete_inventory_item(item_code: int, db: Session = Depends(get_db)):
+    """Admin workflow: Permanently remove an item from the warehouse."""
+    
+    # Fetch the item to delete
+    db_item = db.query(models.InventoryItem).filter(models.InventoryItem.item_code == item_code).first()
+    
+    # Validation: Ensure the item actually exists
+    if not db_item:
+        raise HTTPException(status_code=404, detail="Inventory item not found.")
+        
+    # Delete the object and save the change
+    db.delete(db_item)
+    db.commit()
+    
+    return {"message": f"Item code {item_code} has been successfully deleted from inventory."}
 
 @app.get("/")
 def read_root():

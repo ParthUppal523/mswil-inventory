@@ -8,6 +8,7 @@ class UserRegistrationRequest(BaseModel):
     email: EmailStr
     password: str
     role: str
+    contact_phone: Optional[str] = None
     designation: Optional[str] = None
     company: Optional[str] = None # Used if they are a customer
 
@@ -15,3 +16,31 @@ class ChangeUsernameRequest(BaseModel):
     """Validates a user's request to change their handle."""
     new_username: str
 
+class InventoryItemBase(BaseModel):
+    """Base schema containing the shared attributes for an inventory item."""
+    item_code: int
+    item_name: str
+    serial_number: str
+    quantity: int
+    price: float
+    description: Optional[str] = ""
+
+class InventoryItemCreate(InventoryItemBase):
+    """Schema used when an Admin creates a new item."""
+    pass # inherits everything as defined in the Base
+
+class InventoryItemUpdate(BaseModel):
+    """Schema used when updating stock."""
+    item_name: Optional[str] = None
+    serial_number: Optional[str] = None
+    quantity: Optional[int] = None
+    price: Optional[float] = None
+    description: Optional[str] = None
+
+class InventoryItemResponse(InventoryItemBase):
+    """Schema used when sending inventory data back to the frontend."""
+    item_code: int
+
+    class Config:
+        # Read data directly from the SQLAlchemy ORM model
+        from_attributes = True
