@@ -39,7 +39,7 @@ def generate_po_pdf(po_id: int, customer_username: str, item_name: str, quantity
     c.drawString(50, 610, "Order Summary:")
     c.drawString(70, 585, f"Item Requested: {item_name}")
     c.drawString(70, 565, f"Quantity Approved: {quantity} Units")
-    c.drawString(70, 545, f"Total Billed Value: ${total_price:.2f}")
+    c.drawString(70, 545, f"Total Billed Value: ₹{total_price:.2f}")
     
     # --- STATUS ---
     c.line(50, 520, 550, 520)
