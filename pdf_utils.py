@@ -14,7 +14,7 @@ def generate_po_pdf(po_id: int, customer_username: str, item_name: str, quantity
     # Create a unique file name based on the order ID and user
     file_path = f"purchase_orders/PO_{po_id}_{customer_username}.pdf"
     
-    # Initialize the PDF canvas (this acts like a blank piece of paper)
+    # Initialize the PDF canvas (letter size is 8.5 x 11 inches)
     c = canvas.Canvas(file_path, pagesize=letter)
     
     # --- HEADER ---

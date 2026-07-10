@@ -1,18 +1,28 @@
 import re
+import bcrypt
 import models
 from sqlalchemy.orm import Session
-from passlib.context import CryptContext
 
-# Initialize the password hashing configuration
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
+# --- PASSWORD HASHING & VERIFICATION ---
 def get_password_hash(password: str) -> str:
     """Hashes a plaintext password using bcrypt."""
-    return pwd_context.hash(password)
+    # Encode the password to bytes, generate a salt, and hash it
+    pwd_bytes = password.encode('utf-8')
+    salt = bcrypt.gensalt()
+    hashed_bytes = bcrypt.hashpw(pwd_bytes, salt)
+    
+    # Decode back to a standard string so PostgreSQL can store it
+    return hashed_bytes.decode('utf-8')
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verifies a plaintext password against a hashed one during login."""
-    return pwd_context.verify(plain_password, hashed_password)
+    password_bytes = plain_password.encode('utf-8')
+    hashed_bytes = hashed_password.encode('utf-8')
+    
+    return bcrypt.checkpw(password_bytes, hashed_bytes)
+
+
+# --- USERNAME GENERATION & EMAILS ---
 
 def check_username_available(db: Session, username: str) -> bool:
     """Checks the database to see if a username is already taken."""
@@ -21,23 +31,20 @@ def check_username_available(db: Session, username: str) -> bool:
 
 def generate_unique_username(db: Session, first_name: str, last_name: str, role: str) -> str:
     """
-    Generates a unique username.
+    Generates a unique username based on industry standards.
     - Admins: firstname.lastname
     - Customers: firstname_lastname
     - Appends numbers (2, 3, etc.) if collisions occur.
     """
-    # 1. Clean the names (convert to lowercase, strip spaces and special characters)
     fn = re.sub(r'[^a-z0-9]', '', first_name.lower().strip())
     ln = re.sub(r'[^a-z0-9]', '', last_name.lower().strip())
     
-    # 2. Determine the correct separator based on role
     separator = "." if role.lower() == "admin" else "_"
     base_username = f"{fn}{separator}{ln}"
     
     username = base_username
     counter = 2
     
-    # 3. Collision Handling: Loop until we find an available username
     while not check_username_available(db, username):
         username = f"{base_username}{counter}"
         counter += 1
@@ -47,7 +54,7 @@ def generate_unique_username(db: Session, first_name: str, last_name: str, role:
 def send_approval_email(email: str, username: str):
     """
     Mock function to simulate sending an email. 
-    In a real app, this would use a library like 'smtplib' or an API like SendGrid.
+    In the real app, this would use a library like 'smtplib' or an API like SendGrid.
     """
     print(f"\n{'='*40}")
     print(f"EMAIL DISPATCHED TO: {email}")
