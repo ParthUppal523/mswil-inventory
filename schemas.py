@@ -44,3 +44,23 @@ class InventoryItemResponse(InventoryItemBase):
     class Config:
         # Read data directly from the SQLAlchemy ORM model
         from_attributes = True
+
+# --- PURCHASE ORDER SCHEMAS ---
+
+class PurchaseOrderBase(BaseModel):
+    """Base schema for a Purchase Order."""
+    customer_id: int
+    item_id: int
+    ordered_quantity: int
+
+class PurchaseOrderCreate(PurchaseOrderBase):
+    """Schema used when a Customer submits a new PO."""
+    pass
+
+class PurchaseOrderResponse(PurchaseOrderBase):
+    """Schema used to send the confirmed PO back to the frontend."""
+    id: int
+    status: str
+
+    class Config:
+        from_attributes = True

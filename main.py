@@ -5,6 +5,9 @@ import schemas
 import auth_utils
 from database import engine, get_db
 from typing import Optional
+from fastapi.responses import FileResponse
+import pdf_utils
+import os
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -169,6 +172,86 @@ def delete_inventory_item(item_code: int, db: Session = Depends(get_db)):
     db.commit()
     
     return {"message": f"Item code {item_code} has been successfully deleted from inventory."}
+
+@app.post("/purchase-order", response_model=schemas.PurchaseOrderResponse)
+def create_purchase_order(po_request: schemas.PurchaseOrderCreate, db: Session = Depends(get_db)):
+    """Customer workflow: Submit a PO, handle backorders, deduct stock, and generate PDFs."""
+    
+    # 1. Validate the Customer
+    customer = db.query(models.User).filter(models.User.id == po_request.customer_id).first()
+    if not customer or customer.role != "customer":
+        raise HTTPException(status_code=400, detail="Invalid customer ID or user is not a customer.")
+        
+    # 2. Fetch the Inventory Item details
+    inventory_item = db.query(models.InventoryItem).filter(models.InventoryItem.item_code == po_request.item_id).first()
+    if not inventory_item:
+        raise HTTPException(status_code=404, detail="Item not found in inventory.")
+        
+    # 3. Insufficient Stock Handling: If the requested quantity exceeds available stock, mark as "Backordered" 
+    if inventory_item.quantity < po_request.ordered_quantity:
+        # Do not deduct stock. Simply record the PO as "Backordered".
+        backordered_po = models.PurchaseOrder(
+            customer_id=po_request.customer_id,
+            item_id=po_request.item_id,
+            ordered_quantity=po_request.ordered_quantity,
+            status="Backordered" # Admin will see this status and know they need more stock
+        )
+        db.add(backordered_po)
+        db.commit()
+        db.refresh(backordered_po)
+        
+        # The frontend will see status="Backordered" and can display a 
+        # message like "Requirement recorded. Pending stock availability."
+        return backordered_po
+        
+    # 4. SUCCESSFUL EXECUTION: Deduct stock and create the approved order
+    inventory_item.quantity -= po_request.ordered_quantity
+    
+    new_po = models.PurchaseOrder(
+        customer_id=po_request.customer_id,
+        item_id=po_request.item_id,
+        ordered_quantity=po_request.ordered_quantity,
+        status="Approved"
+    )
+    
+    db.add(new_po)
+    db.commit()
+    db.refresh(new_po)
+
+    # 5. GENERATE THE PDF (Only happens if sufficient stock is available)
+    total_price = inventory_item.price * po_request.ordered_quantity
+    
+    pdf_utils.generate_po_pdf(
+        po_id=new_po.id,
+        customer_username=customer.username,
+        item_name=inventory_item.item_name,
+        quantity=po_request.ordered_quantity,
+        total_price=total_price,
+        status=new_po.status
+    )
+    
+    return new_po
+
+@app.get("/purchase-orders/{po_id}/pdf")
+def download_po_pdf(po_id: int, db: Session = Depends(get_db)):
+    """Endpoint for Admins and Customers to view/download the generated PO PDF."""
+    
+    # 1. Find the PO and the associated customer
+    po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == po_id).first()
+    if not po:
+        raise HTTPException(status_code=404, detail="Purchase Order not found.")
+        
+    customer = db.query(models.User).filter(models.User.id == po.customer_id).first()
+    
+    # 2. Construct the expected file path where the PDF was saved
+    file_path = f"purchase_orders/PO_{po_id}_{customer.username}.pdf"
+    
+    # 3. Check if the file physically exists on the server's hard drive
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="PDF document not found on server.")
+        
+    # 4. Return the file directly as a downloadable/viewable attachment
+    return FileResponse(path=file_path, filename=f"MSWIL_PO_{po_id}.pdf", media_type='application/pdf')
 
 @app.get("/")
 def read_root():
