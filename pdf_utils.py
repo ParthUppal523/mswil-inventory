@@ -1,52 +1,101 @@
 import os
 from datetime import datetime
 from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
-# Ensure the directory to store PDFs exists when the server starts
+# Directories to store generated PDFs for POs and invoices
 os.makedirs("purchase_orders", exist_ok=True)
+os.makedirs("invoices", exist_ok=True)
 
-def generate_po_pdf(po_id: int, customer_username: str, item_name: str, quantity: int, total_price: float, status: str) -> str:
+MSWIL_DATA = """
+<b>Motherson Sumi Wiring India Limited</b><br/>
+Head Office: C-14 A & B, Sector 1, Noida – 201301 Distt. Gautam Budh Nagar, U.P. India<br/>
+GSTIN: 09XXXXXXXXXXXXX | PAN: XXXXXXXXXX <br/>
+Tel: +91-120-XXXXXXX, XXXXXXX, Fax: +91-120-XXXXXXX, XXXXXXX, Website: www.motherson.com
+"""
+
+def generate_enterprise_pdf(file_path: str, doc_type: str, doc_id: int, customer_details: dict, item_details: dict, addresses: dict):
     """
-    Generates a stylized PO PDF using ReportLab.
-    Saves it locally to the 'purchase_orders' folder.
+    A unified generator for building both POs and Invoices.
     """
-    # Create a unique file name based on the order ID and user
-    file_path = f"purchase_orders/PO_{po_id}_{customer_username}.pdf"
+    doc = SimpleDocTemplate(file_path, pagesize=letter)
+    elements = []
+    styles = getSampleStyleSheet()
     
-    # Initialize the PDF canvas (letter size is 8.5 x 11 inches)
-    c = canvas.Canvas(file_path, pagesize=letter)
+    # Custom Styles
+    title_style = ParagraphStyle(name='TitleStyle', parent=styles['Heading1'], fontSize=18, textColor=colors.darkblue)
+    normal_style = styles['Normal']
     
-    # --- HEADER ---
-    c.setFont("Helvetica-Bold", 16)
-    # X and Y coordinates (from bottom-left corner of the page)
-    c.drawString(50, 750, "Motherson Sumi Wiring India Ltd.")
+    # 1. HEADER (Title and Date)
+    elements.append(Paragraph(f"{doc_type} #{doc_id}", title_style))
+    elements.append(Paragraph(f"Date: {datetime.now().strftime('%d-%b-%Y')}", normal_style))
+    elements.append(Spacer(1, 20))
     
-    c.setFont("Helvetica", 10)
-    c.drawString(50, 735, "Enterprise Inventory System")
+    # 2. ADDRESS BLOCK (Using a borderless table for side-by-side layout)
+    mswil_paragraph = Paragraph(MSWIL_DATA, normal_style)
     
-    # --- PO DETAILS ---
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(50, 690, f"PURCHASE ORDER: #{po_id}")
+    customer_info = f"<b>{customer_details['company']}</b><br/>" \
+                    f"GSTIN: {customer_details['gst_number']}<br/>" \
+                    f"Email: {customer_details['email']}<br/>" \
+                    f"<b>Billing:</b> {addresses['billing']}<br/>" \
+                    f"<b>Shipping:</b> {addresses['shipping']}"
+    customer_paragraph = Paragraph(customer_info, normal_style)
     
-    c.setFont("Helvetica", 11)
-    c.drawString(50, 670, f"Date Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    c.drawString(50, 650, f"Customer / Vendor ID: {customer_username}")
+    # Depending on the document type, adjust the labels in the address table
+    if doc_type == "PURCHASE ORDER":
+        address_data = [["Supplier:", "Buyer / Bill To:"], [mswil_paragraph, customer_paragraph]]
+    else:
+        address_data = [["Supplier / Bill From:", "Buyer / Bill To:"], [mswil_paragraph, customer_paragraph]]
+        
+    address_table = Table(address_data, colWidths=[270, 270])
+    address_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
+    ]))
+    elements.append(address_table)
+    elements.append(Spacer(1, 30))
     
-    # --- LINE ITEMS ---
-    c.line(50, 630, 550, 630) # Draws a horizontal line across the page
+    # 3. LINE ITEMS (The Grid)
+    # Price Calculations
+    qty = item_details['quantity']
+    rate = item_details['price']
+    base_amount = qty * rate
     
-    c.drawString(50, 610, "Order Summary:")
-    c.drawString(70, 585, f"Item Requested: {item_name}")
-    c.drawString(70, 565, f"Quantity Approved: {quantity} Units")
-    c.drawString(70, 545, f"Total Billed Value: ₹{total_price:.2f}")
+    if doc_type == "TAX INVOICE":
+        # Invoice includes 18% IGST calculation
+        igst = base_amount * 0.18
+        total_amount = base_amount + igst
+        item_data = [
+            ['Description', 'HSN/SAC', 'Qty', 'Rate (INR)', 'Base Amount', 'IGST (18%)', 'Total (INR)'],
+            [item_details['name'], 'XXXXXX', str(qty), f"{rate:,.2f}", f"{base_amount:,.2f}", f"{igst:,.2f}", f"{total_amount:,.2f}"]
+        ]
+    else:
+        # PO just shows requested amounts
+        item_data = [
+            ['Item Code', 'Description', 'Qty', 'Expected Rate (INR)', 'Expected Total (INR)'],
+            [str(item_details['code']), item_details['name'], str(qty), f"{rate:,.2f}", f"{base_amount:,.2f}"]
+        ]
+        
+    item_table = Table(item_data, width=540)
+    item_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    elements.append(item_table)
+    elements.append(Spacer(1, 40))
     
-    # --- STATUS ---
-    c.line(50, 520, 550, 520)
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(50, 490, f"Current Status: {status.upper()}")
+    # 4. TERMS & CONDITIONS
+    elements.append(Paragraph("<b>Terms & Conditions:</b>", normal_style))
+    terms = "1. Payment Terms: 15 Days from invoice.<br/>2. Taxes applicable as per actuals.<br/>3. Subject to Noida Jurisdiction."
+    elements.append(Paragraph(terms, normal_style))
     
-    # Save the document to the hard drive
-    c.save()
-    
-    return file_path
+    # Build the PDF
+    doc.build(elements)

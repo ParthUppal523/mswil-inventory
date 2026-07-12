@@ -55,6 +55,9 @@ class PurchaseOrderBase(BaseModel):
 
 class PurchaseOrderCreate(PurchaseOrderBase):
     """Schema used when a Customer submits a new PO."""
+    shipping_address: str
+    billing_address: str
+    gst_number: str
     pass
 
 class PurchaseOrderResponse(PurchaseOrderBase):
