@@ -1,7 +1,23 @@
+import os
 import re
 import bcrypt
+import jwt
 import models
+from datetime import datetime, timedelta, timezone
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from database import get_db
 from sqlalchemy.orm import Session
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# --- JWT CONFIGURATION ---
+SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 # 1 hour expiration for security
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 # --- PASSWORD HASHING & VERIFICATION ---
 def get_password_hash(password: str) -> str:
@@ -50,6 +66,56 @@ def generate_unique_username(db: Session, first_name: str, last_name: str, role:
         counter += 1
         
     return username
+
+def create_access_token(data: dict):
+    """Creates the encrypted JWT token."""
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    
+    # Cryptographically sign the token using the secret key
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    """
+    This function intercepts requests, decrypts the token, 
+    and fetches the exact user from the database.
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
+    try:
+        # Decode the token using the secret key
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        # Extract the username embedded during login
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired. Please log in again.")
+    except jwt.InvalidTokenError:
+        raise credentials_exception
+        
+    # Find the user in the database
+    user = db.query(models.User).filter(models.User.username == username).first()
+    if user is None:
+        raise credentials_exception
+        
+    return user
+
+def get_current_admin(current_user: models.User = Depends(get_current_user)):
+    """Checks if the verified user has Admin privileges."""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="You do not have permission to perform this action. Admins only."
+        )
+    return current_user
 
 def send_approval_email(email: str, username: str):
     """

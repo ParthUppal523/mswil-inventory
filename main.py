@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, status
 from sqlalchemy.orm import Session
 import models
 import schemas
@@ -6,13 +6,39 @@ import auth_utils
 from database import engine, get_db
 from typing import Optional
 from fastapi.responses import FileResponse
+from fastapi.security import OAuth2PasswordRequestForm
 import pdf_utils
 import os
 
 models.Base.metadata.create_all(bind=engine)
 
-
 app = FastAPI(title="MSWIL Inventory System API")
+
+@app.post("/login", response_model=schemas.Token)
+def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    """Authenticates a user and hands them a JWT token."""
+    
+    # Find the user by username
+    user = db.query(models.User).filter(models.User.username == form_data.username).first()
+    
+    # Verify existence and password
+    if not user or not auth_utils.verify_password(form_data.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        
+    # Verify they have been approved by an admin
+    if not user.is_approved:
+        raise HTTPException(status_code=403, detail="Account pending admin approval.")
+        
+    # Generate the JWT token with their username as the 'sub' (subject) and their role for authorization
+    access_token = auth_utils.create_access_token(
+        data={"sub": user.username, "role": user.role} 
+    )
+    
+    return {"access_token": access_token, "token_type": "bearer"}
 
 @app.post("/register")
 def register_user(request: schemas.UserRegistrationRequest, db: Session = Depends(get_db)):
@@ -81,7 +107,11 @@ def approve_user(user_id: int, db: Session = Depends(get_db)):
     return {"message": f"User '{user.username}' has been approved and notified."}
 
 @app.post("/inventory", response_model=schemas.InventoryItemResponse)
-def add_inventory_item(item: schemas.InventoryItemCreate, db: Session = Depends(get_db)):
+def add_inventory_item(
+    item: schemas.InventoryItemCreate, 
+    db: Session = Depends(get_db),
+    admin_user: models.User = Depends(auth_utils.get_current_admin)
+):
     """Admin workflow: Add a new physical part to the warehouse."""
     
     # 1. Check if the explicitly provided item_code already exists
@@ -116,7 +146,8 @@ def get_all_inventory(
     item_code: Optional[int] = None, 
     item_name: Optional[str] = None, 
     serial_number: Optional[str] = None, 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth_utils.get_current_user)
 ):
     """Workflow: Fetch items. Allows searching by code, name, or serial number."""
     
@@ -139,7 +170,12 @@ def get_all_inventory(
 
 
 @app.put("/inventory/{item_code}", response_model=schemas.InventoryItemResponse)
-def update_inventory_item(item_code: int, update_data: schemas.InventoryItemUpdate, db: Session = Depends(get_db)):
+def update_inventory_item(
+    item_code: int, 
+    update_data: schemas.InventoryItemUpdate, 
+    db: Session = Depends(get_db),
+    admin_user: models.User = Depends(auth_utils.get_current_admin)
+):
     """Admin workflow: Update the stock quantity, price, or details of an existing item."""
     
     db_item = db.query(models.InventoryItem).filter(models.InventoryItem.item_code == item_code).first()
@@ -157,7 +193,11 @@ def update_inventory_item(item_code: int, update_data: schemas.InventoryItemUpda
     return db_item
 
 @app.delete("/inventory/{item_code}")
-def delete_inventory_item(item_code: int, db: Session = Depends(get_db)):
+def delete_inventory_item(
+    item_code: int, 
+    db: Session = Depends(get_db),
+    admin_user: models.User = Depends(auth_utils.get_current_admin)
+):
     """Admin workflow: Permanently remove an item from the warehouse."""
     
     # Fetch the item to delete
@@ -174,15 +214,18 @@ def delete_inventory_item(item_code: int, db: Session = Depends(get_db)):
     return {"message": f"Item code {item_code} has been successfully deleted from inventory."}
 
 @app.post("/purchase-order", response_model=schemas.PurchaseOrderResponse)
-def create_purchase_order(po_request: schemas.PurchaseOrderCreate, db: Session = Depends(get_db)):
+def create_purchase_order(
+    po_request: schemas.PurchaseOrderCreate, 
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth_utils.get_current_user)
+):
     """Customer workflow: Submit a PO with relevant details, handle backorders, deduct stock, 
     and generate PO & Invoice PDFs."""
     
     # 1. Validate the Customer and fetch their details
-    customer = db.query(models.User).filter(models.User.id == po_request.customer_id).first()
-    customer_profile = db.query(models.CustomerProfile).filter(models.CustomerProfile.user_id == customer.id).first()
-    if not customer or customer.role != "customer":
+    if not current_user or current_user.role != "customer":
         raise HTTPException(status_code=400, detail="Invalid customer ID or user is not a customer.")
+    customer_profile = db.query(models.CustomerProfile).filter(models.CustomerProfile.user_id == current_user.id).first()
         
     # 2. Fetch the Inventory Item details
     inventory_item = db.query(models.InventoryItem).filter(models.InventoryItem.item_code == po_request.item_id).first()
@@ -193,7 +236,7 @@ def create_purchase_order(po_request: schemas.PurchaseOrderCreate, db: Session =
     if inventory_item.quantity < po_request.ordered_quantity:
         # Do not deduct stock. Simply record the PO as "Backordered".
         backordered_po = models.PurchaseOrder(
-            customer_id=po_request.customer_id,
+            customer_id=current_user.id,
             item_id=po_request.item_id,
             ordered_quantity=po_request.ordered_quantity,
             status="Backordered" # Admin will see this status and know they need more stock
@@ -210,7 +253,7 @@ def create_purchase_order(po_request: schemas.PurchaseOrderCreate, db: Session =
     inventory_item.quantity -= po_request.ordered_quantity
     
     new_po = models.PurchaseOrder(
-        customer_id=po_request.customer_id,
+        customer_id=current_user.id,
         item_id=po_request.item_id,
         ordered_quantity=po_request.ordered_quantity,
         status="Approved"
@@ -227,8 +270,8 @@ def create_purchase_order(po_request: schemas.PurchaseOrderCreate, db: Session =
 
    # 5. PREPARE DATA DICTIONARIES FOR PDF
     customer_dict = {
-        "company": customer_profile.organization_name if customer_profile else customer.username,
-        "email": customer.email,
+        "company": customer_profile.organization_name if customer_profile else current_user.username,
+        "email": current_user.email,
         "gst_number": customer_profile.gst_number if customer_profile else ""
     }
 
@@ -245,8 +288,8 @@ def create_purchase_order(po_request: schemas.PurchaseOrderCreate, db: Session =
     }
 
     # 6. GENERATE BOTH PDFs
-    po_file = f"purchase_orders/PO_{new_po.id}_{customer.username}.pdf"
-    inv_file = f"invoices/INV_{new_po.id}_{customer.username}.pdf"
+    po_file = f"purchase_orders/PO_{new_po.id}_{current_user.username}.pdf"
+    inv_file = f"invoices/INV_{new_po.id}_{current_user.username}.pdf"
 
     # Generate the PO
     pdf_utils.generate_enterprise_pdf(po_file, "PURCHASE ORDER", new_po.id, customer_dict, item_dict, address_dict)

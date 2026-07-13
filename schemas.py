@@ -1,6 +1,15 @@
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 
+# --- TOKEN SCHEMAS ---
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    login_id: Optional[str] = None
+
+# --- USER SCHEMAS ---
 class UserRegistrationRequest(BaseModel):
     """Validates the data coming from the frontend registration form."""
     first_name: str
@@ -16,6 +25,7 @@ class ChangeUsernameRequest(BaseModel):
     """Validates a user's request to change their handle."""
     new_username: str
 
+# --- INVENTORY SCHEMAS ---
 class InventoryItemBase(BaseModel):
     """Base schema containing the shared attributes for an inventory item."""
     item_code: int
@@ -49,20 +59,20 @@ class InventoryItemResponse(InventoryItemBase):
 
 class PurchaseOrderBase(BaseModel):
     """Base schema for a Purchase Order."""
-    customer_id: int
     item_id: int
     ordered_quantity: int
+    
 
 class PurchaseOrderCreate(PurchaseOrderBase):
     """Schema used when a Customer submits a new PO."""
     shipping_address: str
     billing_address: str
-    gst_number: str
-    pass
+    gst_number: Optional[str] = None
 
 class PurchaseOrderResponse(PurchaseOrderBase):
     """Schema used to send the confirmed PO back to the frontend."""
     id: int
+    customer_id: int
     status: str
 
     class Config:
