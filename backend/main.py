@@ -1,13 +1,13 @@
 from fastapi import FastAPI, HTTPException, Depends, status
 from sqlalchemy.orm import Session
-import backend.models as models
-import backend.schemas as schemas
-import backend.auth_utils as auth_utils
-from backend.database import engine, get_db
+import models
+import schemas
+import auth_utils
+from database import engine, get_db
 from typing import Optional
 from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordRequestForm
-import backend.pdf_utils as pdf_utils
+import pdf_utils as pdf_utils
 import os
 
 models.Base.metadata.create_all(bind=engine)

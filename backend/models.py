@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, Float, Text, Boolean
 from sqlalchemy.orm import relationship
-from backend.database import Base
+from database import Base
 
 # 1. CORE AUTHENTICATION TABLE
 class User(Base):

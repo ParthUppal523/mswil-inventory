@@ -2,11 +2,11 @@ import os
 import re
 import bcrypt
 import jwt
-import backend.models as models
+import models
 from datetime import datetime, timedelta, timezone
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from backend.database import get_db
+from database import get_db
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 
