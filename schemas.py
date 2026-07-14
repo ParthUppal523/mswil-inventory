@@ -62,12 +62,17 @@ class PurchaseOrderBase(BaseModel):
     item_id: int
     ordered_quantity: int
     
+class POItemCreate(BaseModel):
+    """Represents a single line item in a Purchase Order."""
+    item_code: int
+    ordered_quantity: int
 
 class PurchaseOrderCreate(PurchaseOrderBase):
     """Schema used when a Customer submits a new PO."""
     shipping_address: str
     billing_address: str
     gst_number: Optional[str] = None
+    item: List[POItemCreate]
 
 class PurchaseOrderResponse(PurchaseOrderBase):
     """Schema used to send the confirmed PO back to the frontend."""

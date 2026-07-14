@@ -87,21 +87,21 @@ def register_user(request: schemas.UserRegistrationRequest, db: Session = Depend
 def approve_user(user_id: int, db: Session = Depends(get_db)):
     """Endpoint for an admin to approve a new user account."""
     
-    # 1. Search the database for the user by their ID
+    # Search the database for the user by their ID
     user = db.query(models.User).filter(models.User.id == user_id).first()
     
-    # 2. Validation Checks
+    # Validation Checks
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
     if user.is_approved:
         raise HTTPException(status_code=400, detail="User is already approved")
         
-    # 3. Update the approval status in Python, then save (commit) to PostgreSQL
+    # Update the approval status in Python, then save (commit) to PostgreSQL
     user.is_approved = True
     db.commit()
     
-    # 4. Trigger the utility function to simulate sending the welcome email
+    # Trigger the utility function to simulate sending the welcome email
     auth_utils.send_approval_email(user.email, user.username)
     
     return {"message": f"User '{user.username}' has been approved and notified."}
@@ -114,12 +114,12 @@ def add_inventory_item(
 ):
     """Admin workflow: Add a new physical part to the warehouse."""
     
-    # 1. Check if the explicitly provided item_code already exists
+    # Check if the explicitly provided item_code already exists
     existing_code = db.query(models.InventoryItem).filter(models.InventoryItem.item_code == item.item_code).first()
     if existing_code:
         raise HTTPException(status_code=400, detail=f"Item code {item.item_code} is already in use.")
 
-    # 2. Check for duplicate serial numbers
+    # Check for duplicate serial numbers
     existing_serial = db.query(models.InventoryItem).filter(models.InventoryItem.serial_number == item.serial_number).first()
     if existing_serial:
         raise HTTPException(status_code=400, detail=f"An item with this Serial Number ({item.serial_number}) already exists.")
@@ -151,10 +151,10 @@ def get_all_inventory(
 ):
     """Workflow: Fetch items. Allows searching by code, name, or serial number."""
     
-    # 1. Base query that targets the whole table
+    # Base query that targets the whole table
     query = db.query(models.InventoryItem)
     
-    # 2. Dynamically apply filters if the admin provided them in the URL
+    # Dynamically apply filters if the admin provided them in the URL
     if item_code is not None:
         query = query.filter(models.InventoryItem.item_code == item_code)
         
@@ -164,7 +164,7 @@ def get_all_inventory(
     if serial_number:
         query = query.filter(models.InventoryItem.serial_number == serial_number)
         
-    # 3. Execute the final filtered query
+    # Execute the final filtered query
     items = query.all()
     return items
 
@@ -222,80 +222,92 @@ def create_purchase_order(
     """Customer workflow: Submit a PO with relevant details, handle backorders, deduct stock, 
     and generate PO & Invoice PDFs."""
     
-    # 1. Validate the Customer and fetch their details
+    # Validate the Customer and fetch their details
     if not current_user or current_user.role != "customer":
         raise HTTPException(status_code=400, detail="Invalid customer ID or user is not a customer.")
     customer_profile = db.query(models.CustomerProfile).filter(models.CustomerProfile.user_id == current_user.id).first()
         
-    # 2. Fetch the Inventory Item details
-    inventory_item = db.query(models.InventoryItem).filter(models.InventoryItem.item_code == po_request.item_id).first()
-    if not inventory_item:
-        raise HTTPException(status_code=404, detail="Item not found in inventory.")
-        
-    # 3. Insufficient Stock Handling: If the requested quantity exceeds available stock, mark as "Backordered" 
-    if inventory_item.quantity < po_request.ordered_quantity:
-        # Do not deduct stock. Simply record the PO as "Backordered".
-        backordered_po = models.PurchaseOrder(
-            customer_id=current_user.id,
-            item_id=po_request.item_id,
-            ordered_quantity=po_request.ordered_quantity,
-            status="Backordered" # Admin will see this status and know they need more stock
-        )
-        db.add(backordered_po)
-        db.commit()
-        db.refresh(backordered_po)
-        
-        # The frontend will see status="Backordered" and can display a 
-        # message like "Requirement recorded. Pending stock availability."
-        return backordered_po
-        
-    # 4. SUCCESSFUL EXECUTION: Deduct stock and create the approved order
-    inventory_item.quantity -= po_request.ordered_quantity
+    # VALIDATION LOOP: Check all items for existence and stock before deducting anything
+    is_backordered = False
+    items_to_process = []
     
+    # Iterate through the list of items the frontend sent in the cart
+    for cart_item in po_request.items:
+        db_item = db.query(models.InventoryItem).filter(models.InventoryItem.item_code == cart_item.item_code).first()
+        if not db_item:
+            raise HTTPException(status_code=404, detail=f"Item code {cart_item.item_code} not found in inventory.")
+            
+        # If a single item lacks sufficient stock, the entire order is flagged as backordered
+        if db_item.quantity < cart_item.ordered_quantity:
+            is_backordered = True
+            
+        # Temporarily store the matched database object and requested quantity in memory
+        items_to_process.append({"db_item": db_item, "req_qty": cart_item.ordered_quantity})
+
+    # CREATE THE MASTER PO
     new_po = models.PurchaseOrder(
         customer_id=current_user.id,
-        item_id=po_request.item_id,
-        ordered_quantity=po_request.ordered_quantity,
-        status="Approved"
+        status="Backordered" if is_backordered else "Approved"
     )
-    
     db.add(new_po)
+    db.flush()
+
+    # EXECUTION LOOP: Create Line Items and Deduct Stock
+    pdf_item_list = [] # to be passed to the PDF generator
+    
+    for item_data in items_to_process:
+        db_item = item_data["db_item"]
+        req_qty = item_data["req_qty"]
+        
+        # Create the Line Item linked to the Master PO Header
+        line_item = models.PurchaseOrderItem(
+            po_id=new_po.id,
+            item_code=db_item.item_code,
+            ordered_quantity=req_qty,
+            unit_price=db_item.price
+        )
+        db.add(line_item)
+        
+        # Deduct stock ONLY if the overall PO is approved
+        if not is_backordered:
+            db_item.quantity -= req_qty
+            
+        # Build the dictionary for the PDF
+        pdf_item_list.append({
+            "code": db_item.item_code,
+            "name": db_item.item_name,
+            "serial": db_item.serial_number, 
+            "quantity": req_qty,
+            "price": db_item.price
+        })
+
+    # Save the GST number if previously not provided by the customer
+    if customer_profile and po_request.gst_number and not customer_profile.gst_number:
+        customer_profile.gst_number = po_request.gst_number
+        
+    # Commit all line items, stock deductions, and profile updates in one ACID transaction
     db.commit()
     db.refresh(new_po)
 
-    # Save the GST number if previously not provided by the customer. This ensures future POs and Invoices have the GST number.
-    if customer_profile and po_request.gst_number and not customer_profile.gst_number:
-        customer_profile.gst_number = po_request.gst_number
-        db.commit()
-
-   # 5. PREPARE DATA DICTIONARIES FOR PDF
-    customer_dict = {
-        "company": customer_profile.organization_name if customer_profile else current_user.username,
-        "email": current_user.email,
-        "gst_number": customer_profile.gst_number if customer_profile else ""
-    }
-
-    item_dict = {
-        "code": inventory_item.item_code,
-        "name": inventory_item.item_name,
-        "quantity": po_request.ordered_quantity,
-        "price": inventory_item.price
-    }
-
-    address_dict = {
-        "shipping": po_request.shipping_address,
-        "billing": po_request.billing_address
-    }
-
-    # 6. GENERATE BOTH PDFs
-    po_file = f"purchase_orders/PO_{new_po.id}_{current_user.username}.pdf"
-    inv_file = f"invoices/INV_{new_po.id}_{current_user.username}.pdf"
-
-    # Generate the PO
-    pdf_utils.generate_enterprise_pdf(po_file, "PURCHASE ORDER", new_po.id, customer_dict, item_dict, address_dict)
+    # GENERATE PDFs (Only if Approved)
+    if not is_backordered:
+        customer_dict = {
+            "company": customer_profile.organization_name if customer_profile else current_user.username,
+            "email": current_user.email,
+            "gst_number": customer_profile.gst_number if customer_profile else ""
+        }
     
-    # Generate the Tax Invoice
-    pdf_utils.generate_enterprise_pdf(inv_file, "TAX INVOICE", new_po.id, customer_dict, item_dict, address_dict)
+        address_dict = {
+            "shipping": po_request.shipping_address,
+            "billing": po_request.billing_address
+        }
+    
+        po_file = f"purchase_orders/PO_{new_po.id}_{current_user.username}.pdf"
+        inv_file = f"invoices/INV_{new_po.id}_{current_user.username}.pdf"
+    
+        # Generate the PO and Tax Invoice by passing the list of items (pdf_item_list)
+        pdf_utils.generate_enterprise_pdf(po_file, "PURCHASE ORDER", new_po.id, customer_dict, pdf_item_list, address_dict)
+        pdf_utils.generate_enterprise_pdf(inv_file, "TAX INVOICE", new_po.id, customer_dict, pdf_item_list, address_dict)
     
     return new_po
 

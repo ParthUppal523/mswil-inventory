@@ -80,7 +80,7 @@ def generate_enterprise_pdf(file_path: str, doc_type: str, doc_id: int, customer
             [str(item_details['code']), item_details['name'], str(qty), f"{rate:,.2f}", f"{base_amount:,.2f}"]
         ]
         
-    item_table = Table(item_data, width=540)
+    item_table = Table(item_data)
     item_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),

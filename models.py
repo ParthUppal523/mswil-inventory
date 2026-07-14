@@ -72,6 +72,13 @@ class PurchaseOrder(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     customer_id = Column(Integer, ForeignKey("users.id"))
-    item_id = Column(Integer, ForeignKey("inventory_items.item_code"))
-    ordered_quantity = Column(Integer)
     status = Column(String, default="Pending") # Pending, Approved, Insufficient Stock
+
+class PurchaseOrderItem(Base):
+    __tablename__ = "purchase_order_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    po_id = Column(Integer, ForeignKey("purchase_orders.id", ondelete="CASCADE"))
+    item_code = Column(Integer, ForeignKey("inventory_items.item_code"))
+    ordered_quantity = Column(Integer)
+    unit_price = Column(Float)
