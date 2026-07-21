@@ -7,12 +7,21 @@ from database import engine, get_db
 from typing import Optional
 from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.middleware.cors import CORSMiddleware
 import pdf_utils as pdf_utils
 import os
 
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="MSWIL Inventory System API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"], # The URL of Next.js app
+    allow_credentials=True,
+    allow_methods=["*"], 
+    allow_headers=["*"],
+)
 
 @app.post("/login", response_model=schemas.Token)
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
@@ -311,8 +320,29 @@ def create_purchase_order(
     
     return new_po
 
+@app.get("/purchase-orders", response_model=list[schemas.PurchaseOrderResponse])
+def get_purchase_orders(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth_utils.get_current_user)
+):
+    """Fetch all POs for the logged-in user (Customer or Admin)."""
+    
+    if current_user.role == "admin":
+        # Admins can see all POs
+        pos = db.query(models.PurchaseOrder).all()
+    else:
+        # Customers can only see their own POs
+        pos = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.customer_id == current_user.id).all()
+        
+    return pos
+
 @app.get("/purchase-orders/{po_id}/download")
-def download_document(po_id: int, doc_type: str="po", db: Session = Depends(get_db)):
+def download_document(
+    po_id: int, 
+    doc_type: str="po", 
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth_utils.get_current_user)
+):
     """Endpoint for Admins and Customers to view/download the generated PO or Invoice PDF."""
     
     # 1. Find the PO and the associated customer
