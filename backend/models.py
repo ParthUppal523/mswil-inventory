@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Float, Text, Boolean
+from sqlalchemy import Column, Integer, String, ForeignKey, Float, Text, Boolean, DateTime, func
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -72,7 +72,13 @@ class PurchaseOrder(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     customer_id = Column(Integer, ForeignKey("users.id"))
+    total_amount = Column(Float, default=0.0)
     status = Column(String, default="Pending") # Pending, Approved, Insufficient Stock
+
+    shipping_address = Column(String, nullable=True)
+    billing_address = Column(String, nullable=True)
+    gst_number = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class PurchaseOrderItem(Base):
     __tablename__ = "purchase_order_items"

@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 
@@ -59,8 +60,8 @@ class InventoryItemResponse(InventoryItemBase):
 
 class PurchaseOrderBase(BaseModel):
     """Base schema for a Purchase Order."""
-    item_id: int
-    ordered_quantity: int
+    shipping_address: Optional[str] = None
+    billing_address: Optional[str] = None
     
 class POItemCreate(BaseModel):
     """Represents a single line item in a Purchase Order."""
@@ -69,16 +70,16 @@ class POItemCreate(BaseModel):
 
 class PurchaseOrderCreate(PurchaseOrderBase):
     """Schema used when a Customer submits a new PO."""
-    shipping_address: str
-    billing_address: str
     gst_number: Optional[str] = None
-    item: List[POItemCreate]
+    items: List[POItemCreate]
 
 class PurchaseOrderResponse(PurchaseOrderBase):
     """Schema used to send the confirmed PO back to the frontend."""
     id: int
     customer_id: int
     status: str
+    total_amount: Optional[float] = None
+    created_at: datetime
 
     class Config:
         from_attributes = True

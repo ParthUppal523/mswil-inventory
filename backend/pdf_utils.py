@@ -16,9 +16,9 @@ GSTIN: 09XXXXXXXXXXXXX | PAN: XXXXXXXXXX <br/>
 Tel: +91-120-XXXXXXX, XXXXXXX, Fax: +91-120-XXXXXXX, XXXXXXX, Website: www.motherson.com
 """
 
-def generate_enterprise_pdf(file_path: str, doc_type: str, doc_id: int, customer_details: dict, item_details: dict, addresses: dict):
+def generate_enterprise_pdf(file_path: str, doc_type: str, doc_id: int, customer_details: dict, item_details: list, addresses: dict):
     """
-    A unified generator for building both POs and Invoices.
+    A unified generator for building both POs and Invoices with multiple line items.
     """
     doc = SimpleDocTemplate(file_path, pagesize=letter)
     elements = []
@@ -33,7 +33,7 @@ def generate_enterprise_pdf(file_path: str, doc_type: str, doc_id: int, customer
     elements.append(Paragraph(f"Date: {datetime.now().strftime('%d-%b-%Y')}", normal_style))
     elements.append(Spacer(1, 20))
     
-    # 2. ADDRESS BLOCK (Using a borderless table for side-by-side layout)
+    # 2. ADDRESS BLOCK
     mswil_paragraph = Paragraph(MSWIL_DATA, normal_style)
     
     customer_info = f"<b>{customer_details['company']}</b><br/>" \
@@ -43,7 +43,6 @@ def generate_enterprise_pdf(file_path: str, doc_type: str, doc_id: int, customer
                     f"<b>Shipping:</b> {addresses['shipping']}"
     customer_paragraph = Paragraph(customer_info, normal_style)
     
-    # Depending on the document type, adjust the labels in the address table
     if doc_type == "PURCHASE ORDER":
         address_data = [["Supplier:", "Buyer / Bill To:"], [mswil_paragraph, customer_paragraph]]
     else:
@@ -59,26 +58,31 @@ def generate_enterprise_pdf(file_path: str, doc_type: str, doc_id: int, customer
     elements.append(address_table)
     elements.append(Spacer(1, 30))
     
-    # 3. LINE ITEMS (The Grid)
-    # Price Calculations
-    qty = item_details['quantity']
-    rate = item_details['price']
-    base_amount = qty * rate
-    
+    # 3. DYNAMIC LINE ITEMS (The Grid)
     if doc_type == "TAX INVOICE":
-        # Invoice includes 18% IGST calculation
-        igst = base_amount * 0.18
-        total_amount = base_amount + igst
-        item_data = [
-            ['Description', 'HSN/SAC', 'Qty', 'Rate (INR)', 'Base Amount', 'IGST (18%)', 'Total (INR)'],
-            [item_details['name'], 'XXXXXX', str(qty), f"{rate:,.2f}", f"{base_amount:,.2f}", f"{igst:,.2f}", f"{total_amount:,.2f}"]
-        ]
+        item_data = [['Description', 'HSN/SAC', 'Qty', 'Rate (INR)', 'Base Amount', 'IGST (18%)', 'Total (INR)']]
+        
+        for item in item_details:
+            qty = item['quantity']
+            rate = item['price']
+            base_amount = qty * rate
+            igst = base_amount * 0.18
+            total_amount = base_amount + igst
+            
+            item_data.append([
+                item['name'], 'XXXXXX', str(qty), f"{rate:,.2f}", f"{base_amount:,.2f}", f"{igst:,.2f}", f"{total_amount:,.2f}"
+            ])
     else:
-        # PO just shows requested amounts
-        item_data = [
-            ['Item Code', 'Description', 'Qty', 'Expected Rate (INR)', 'Expected Total (INR)'],
-            [str(item_details['code']), item_details['name'], str(qty), f"{rate:,.2f}", f"{base_amount:,.2f}"]
-        ]
+        item_data = [['Item Code', 'Description', 'Qty', 'Expected Rate (INR)', 'Expected Total (INR)']]
+        
+        for item in item_details:
+            qty = item['quantity']
+            rate = item['price']
+            base_amount = qty * rate
+            
+            item_data.append([
+                str(item['code']), item['name'], str(qty), f"{rate:,.2f}", f"{base_amount:,.2f}"
+            ])
         
     item_table = Table(item_data)
     item_table.setStyle(TableStyle([

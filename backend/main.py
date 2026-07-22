@@ -253,20 +253,26 @@ def create_purchase_order(
         # Temporarily store the matched database object and requested quantity in memory
         items_to_process.append({"db_item": db_item, "req_qty": cart_item.ordered_quantity})
 
-    # CREATE THE MASTER PO
+    # Create the Master PO Header
     new_po = models.PurchaseOrder(
         customer_id=current_user.id,
-        status="Backordered" if is_backordered else "Approved"
+        status="Backordered" if is_backordered else "Approved",
+        shipping_address=po_request.shipping_address,
+        billing_address=po_request.billing_address
     )
     db.add(new_po)
     db.flush()
 
-    # EXECUTION LOOP: Create Line Items and Deduct Stock
-    pdf_item_list = [] # to be passed to the PDF generator
+    # EXECUTION LOOP: Create Line Items, Deduct Stock, and Calculate Total
+    pdf_item_list = [] 
+    total_order_value = 0.0
     
     for item_data in items_to_process:
         db_item = item_data["db_item"]
         req_qty = item_data["req_qty"]
+        
+        # Add to the grand total
+        total_order_value += (db_item.price * req_qty)
         
         # Create the Line Item linked to the Master PO Header
         line_item = models.PurchaseOrderItem(
@@ -289,6 +295,8 @@ def create_purchase_order(
             "quantity": req_qty,
             "price": db_item.price
         })
+
+    new_po.total_amount = total_order_value
 
     # Save the GST number if previously not provided by the customer
     if customer_profile and po_request.gst_number and not customer_profile.gst_number:
@@ -316,7 +324,7 @@ def create_purchase_order(
     
         # Generate the PO and Tax Invoice by passing the list of items (pdf_item_list)
         pdf_utils.generate_enterprise_pdf(po_file, "PURCHASE ORDER", new_po.id, customer_dict, pdf_item_list, address_dict)
-        pdf_utils.generate_enterprise_pdf(inv_file, "TAX INVOICE", new_po.id, customer_dict, pdf_item_list, address_dict)
+        # pdf_utils.generate_enterprise_pdf(inv_file, "TAX INVOICE", new_po.id, customer_dict, pdf_item_list, address_dict)
     
     return new_po
 
