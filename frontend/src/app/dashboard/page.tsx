@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import AdminDashboard from "@/components/AdminDashboard";
+import CustomerDashboard from "@/components/CustomerDashboard";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -46,6 +47,9 @@ export default function Dashboard() {
   // Render the appropriate dashboard based on the user's role
   if (role === "admin") {
     return <AdminDashboard handleLogout={handleLogout} />;
+  }
+  if (role === "customer") {
+    return <CustomerDashboard handleLogout={handleLogout} />;
   }
 
   return (

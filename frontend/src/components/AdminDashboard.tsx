@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Disclosure, DisclosureButton, DisclosurePanel, Menu, MenuButton, MenuItem, MenuItems, Dialog, DialogPanel, DialogTitle, DialogBackdrop } from '@headlessui/react';
-import { Bars3Icon, BellIcon, XMarkIcon, MagnifyingGlassIcon, EllipsisVerticalIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
+import { Bars3Icon, BellIcon, XMarkIcon, MagnifyingGlassIcon, EllipsisVerticalIcon, ArrowDownTrayIcon, DocumentTextIcon, DocumentArrowDownIcon } from '@heroicons/react/24/outline';
 
 const user = { name: 'Admin User', email: 'admin@mswil.com' };
 const navigation = [
@@ -23,6 +23,8 @@ const StatusBadge = ({ status }: { status: string }) => {
   let colorClass = 'bg-gray-100 text-gray-800 border-gray-200';
   if (status === 'Approved' || status === 'In Stock' || status === 'Available') {
     colorClass = 'bg-green-100 text-green-800 border-green-200';
+  } else if (status === 'Invoiced') {
+    colorClass = 'bg-indigo-100 text-indigo-800 border-indigo-200';
   } else if (status === 'Backordered') {
     colorClass = 'bg-orange-100 text-orange-800 border-orange-200';
   } else if (status === 'Low Stock' || status === 'Out of Stock') {
@@ -39,13 +41,15 @@ const StatusBadge = ({ status }: { status: string }) => {
 export default function AdminDashboard({ handleLogout }: { handleLogout: () => void }) {
   const [inventory, setInventory] = useState<any[]>([]);
   const [recentPOs, setRecentPOs] = useState<any[]>([]);
+  const [allPOs, setAllPOs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [activeTab, setActiveTab] = useState('Dashboard');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
-  // --- NEW: EXPANDABLE ROW STATE ---
+  // --- EXPANDABLE ROW STATE ---
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
+  const [expandedPoRow, setExpandedPoRow] = useState<number | null>(null);
 
   const [newItem, setNewItem] = useState({
     item_code: '',
@@ -62,46 +66,96 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      // If the user clicks anywhere that is NOT a table row, contract the description
       if (!target.closest('tr')) {
         setExpandedRow(null);
+        setExpandedPoRow(null);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      const token = localStorage.getItem("mswil_token");
-      if (!token) return;
+  const fetchDashboardData = async () => {
+    const token = localStorage.getItem("mswil_token");
+    if (!token) return;
 
-      try {
-        const invRes = await fetch("http://localhost:8000/inventory", {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (invRes.ok) {
-          const invData = await invRes.json();
-          // ENHANCEMENT: Sort items ascending by Item Code on initial load
-          setInventory(invData.sort((a: any, b: any) => a.item_code - b.item_code));
-        }
-
-        const poRes = await fetch("http://localhost:8000/purchase-orders", {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (poRes.ok) {
-          const poData = await poRes.json();
-          setRecentPOs(poData.slice(-5).reverse()); 
-        }
-      } catch (error) {
-        console.error("Failed to fetch dashboard data:", error);
-      } finally {
-        setLoading(false);
+    try {
+      const invRes = await fetch("http://localhost:8000/inventory", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (invRes.ok) {
+        const invData = await invRes.json();
+        setInventory(invData.sort((a: any, b: any) => a.item_code - b.item_code));
       }
-    };
 
+      const poRes = await fetch("http://localhost:8000/purchase-orders", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (poRes.ok) {
+        const poData = await poRes.json();
+        const sortedPOs = poData.sort((a: any, b: any) => b.id - a.id);
+        setAllPOs(sortedPOs);
+        setRecentPOs(sortedPOs.slice(0, 5)); 
+      }
+    } catch (error) {
+      console.error("Failed to fetch dashboard data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchDashboardData();
   }, []);
+
+  // --- SECURE PDF DOCUMENT VIEWER ---
+  const handleViewDocument = async (e: React.MouseEvent, poId: number, docType: 'po' | 'invoice') => {
+    e.stopPropagation();
+    const token = localStorage.getItem("mswil_token");
+    if (!token) return;
+
+    try {
+      const response = await fetch(`http://localhost:8000/purchase-orders/${poId}/download?doc_type=${docType}`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+      } else {
+        alert("Document not available or endpoint error.");
+      }
+    } catch (error) {
+      console.error("Error downloading document:", error);
+    }
+  };
+
+  // --- ADMIN GENERATE INVOICE HANDLER ---
+  const handleGenerateInvoice = async (e: React.MouseEvent, poId: number) => {
+    e.stopPropagation();
+    const token = localStorage.getItem("mswil_token");
+    if (!token) return;
+
+    try {
+      const response = await fetch(`http://localhost:8000/admin/purchase-orders/${poId}/invoice`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        await fetchDashboardData(); // Refresh list to instantly reflect 'Invoiced' status
+      } else {
+        const errorData = await response.json();
+        alert(errorData.detail || "Failed to generate invoice.");
+      }
+    } catch (error) {
+      console.error("Failed to raise invoice:", error);
+      alert("Network error. Could not connect to the server.");
+    }
+  };
 
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,9 +183,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
 
       if (response.ok) {
         const addedData = await response.json();
-        // ENHANCEMENT: Maintain strict sorting order when a new item is added
         setInventory((prev) => [...prev, addedData].sort((a, b) => a.item_code - b.item_code));
-        
         setIsAddModalOpen(false);
         setNewItem({ item_code: '', item_name: '', serial_number: '', price: '', quantity: '', description: '' });
       } else {
@@ -188,7 +240,6 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
 
       if (response.ok) {
         const updatedData = await response.json();
-        // ENHANCEMENT: Maintain strict sorting order when an item is edited
         setInventory((prev) => 
           prev.map((item) => (item.item_code === updatedData.item_code ? updatedData : item))
               .sort((a, b) => a.item_code - b.item_code)
@@ -419,27 +470,55 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                           <li className="p-6 text-center text-gray-500 text-sm">No recent orders.</li>
                         ) : (
                           recentPOs.map((po) => (
-                            <li key={po.id} className="p-6 hover:bg-gray-50 transition cursor-pointer group flex flex-col gap-2">
+                            <li key={po.id} className="p-6 hover:bg-gray-50 transition flex flex-col gap-2">
+                              
                               <div className="flex justify-between items-center">
-                                <span className="font-bold text-gray-900 group-hover:text-indigo-600 transition-colors">Order #{po.id}</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-gray-900">Order #{po.id}</span>
+                                  <span className="text-xs text-gray-400">
+                                    • {po.created_at ? new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(po.created_at)) : '--'}
+                                  </span>
+                                </div>
                                 <StatusBadge status={po.status} />
                               </div>
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-gray-600 font-medium">Customer #{po.customer_id}</span>
-                                <span className="font-bold text-gray-900">
+
+                              <div className="flex justify-between items-start text-sm mt-1">
+                                <div>
+                                  <div className="font-bold text-gray-800">{po.organization_name || 'Individual Customer'}</div>
+                                  <div className="text-xs text-gray-500">{po.customer_name || `Customer #${po.customer_id}`}</div>
+                                </div>
+                                <span className="font-black text-gray-900 text-base">
                                   {po.total_amount ? `₹${po.total_amount.toFixed(2)}` : '₹ --'}
                                 </span>
                               </div>
-                              <div className="flex justify-between items-center mt-1">
-                                <span className="text-xs text-gray-400">Tap to view details</span>
+
+                              <div className="flex justify-end gap-2 mt-2 pt-2 border-t border-gray-100">
                                 <button 
-                                  onClick={() => window.open(`http://localhost:8000/purchase-orders/${po.id}/download?doc_type=po`, '_blank')}
-                                  className="text-indigo-500 hover:text-indigo-700 bg-indigo-50 p-1.5 rounded-md transition"
-                                  title="Download PDF"
+                                  onClick={(e) => handleViewDocument(e, po.id, 'po')}
+                                  className="text-xs bg-gray-100 text-gray-700 hover:bg-gray-200 px-2.5 py-1 rounded font-medium transition inline-flex items-center gap-1"
                                 >
-                                  <ArrowDownTrayIcon className="h-4 w-4" />
+                                  <DocumentTextIcon className="h-3.5 w-3.5" /> PO PDF
                                 </button>
+                                
+                                {po.status === 'Approved' && (
+                                  <button 
+                                    onClick={(e) => handleGenerateInvoice(e, po.id)}
+                                    className="text-xs bg-emerald-600 text-white hover:bg-emerald-700 px-2.5 py-1 rounded font-bold transition shadow-sm"
+                                  >
+                                    Raise Invoice
+                                  </button>
+                                )}
+
+                                {po.status === 'Invoiced' && (
+                                  <button 
+                                    onClick={(e) => handleViewDocument(e, po.id, 'invoice')}
+                                    className="text-xs bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-2.5 py-1 rounded font-medium transition inline-flex items-center gap-1"
+                                  >
+                                    <DocumentArrowDownIcon className="h-3.5 w-3.5" /> Invoice
+                                  </button>
+                                )}
                               </div>
+
                             </li>
                           ))
                         )}
@@ -490,7 +569,6 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                                   isExpanded ? "bg-indigo-50/40" : ""
                                 )}
                                 onClick={(e) => {
-                                  // Prevent expansion toggle when clicking the Ellipsis Menu button
                                   if ((e.target as HTMLElement).closest('button')) return;
                                   setExpandedRow(isExpanded ? null : item.item_code);
                                 }}
@@ -501,10 +579,9 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">₹{item.price ? item.price.toFixed(2) : '0.00'}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-semibold">{item.quantity}</td>
                                 
-                                {/* Dynamic Description Cell */}
                                 <td className={classNames(
                                   "px-6 py-4 text-sm text-gray-500 transition-all duration-200",
-                                  isExpanded ? "whitespace-normal wrap-break-words min-w-250px" : "truncate max-w-xs"
+                                  isExpanded ? "whitespace-normal wrap-break-words min-w-[250px]" : "truncate max-w-xs"
                                 )}>
                                   {item.description || '--'}
                                 </td>
@@ -542,12 +619,102 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                   </div>
                 </div>
               )}
+
+              {/* --- PURCHASE ORDERS TAB (Detailed View) --- */}
+              {activeTab === 'Purchase Orders' && (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                  <div className="px-6 py-5 border-b border-gray-100 flex justify-between items-center bg-white">
+                    <h3 className="text-lg font-semibold text-gray-900">Manage Customer Purchase Orders</h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50/50">
+                        <tr>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">PO ID</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Organization</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Customer Name</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Value</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Shipping Address</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Billing Address</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                          <th className="px-6 py-4 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 bg-white">
+                        {allPOs.length === 0 ? (
+                          <tr><td colSpan={9} className="px-6 py-12 text-center text-gray-500">No purchase orders recorded yet.</td></tr>
+                        ) : (
+                          allPOs.map((po) => {
+                            const isExpanded = expandedPoRow === po.id;
+
+                            return (
+                              <tr 
+                                key={po.id} 
+                                onClick={() => setExpandedPoRow(isExpanded ? null : po.id)}
+                                className={classNames("hover:bg-gray-50 transition-colors cursor-pointer", isExpanded ? "bg-indigo-50/30" : "")}
+                              >
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                  {po.created_at ? new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(po.created_at)) : '--'}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">#{po.id}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-800">{po.organization_name || 'N/A'}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{po.customer_name || `User #${po.customer_id}`}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
+                                  {po.total_amount ? `₹${po.total_amount.toFixed(2)}` : '₹ --'}
+                                </td>
+                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-[200px]" : "truncate max-w-[150px]")}>
+                                  {po.shipping_address || '--'}
+                                </td>
+                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-[200px]" : "truncate max-w-[150px]")}>
+                                  {po.billing_address || '--'}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                  <StatusBadge status={po.status} />
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap flex justify-center gap-2">
+                                  
+                                  <button 
+                                    onClick={(e) => handleViewDocument(e, po.id, 'po')}
+                                    className="text-xs bg-gray-100 text-gray-700 hover:bg-gray-200 px-3 py-1.5 rounded font-medium transition inline-flex items-center gap-1"
+                                  >
+                                    <DocumentTextIcon className="h-4 w-4" /> PO PDF
+                                  </button>
+
+                                  {po.status === 'Approved' && (
+                                    <button 
+                                      onClick={(e) => handleGenerateInvoice(e, po.id)}
+                                      className="text-xs bg-emerald-600 text-white hover:bg-emerald-700 px-3 py-1.5 rounded font-bold transition shadow-sm"
+                                    >
+                                      Generate Invoice
+                                    </button>
+                                  )}
+
+                                  {po.status === 'Invoiced' && (
+                                    <button 
+                                      onClick={(e) => handleViewDocument(e, po.id, 'invoice')}
+                                      className="text-xs bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-3 py-1.5 rounded font-medium transition inline-flex items-center gap-1"
+                                    >
+                                      <DocumentArrowDownIcon className="h-4 w-4" /> Invoice
+                                    </button>
+                                  )}
+
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
       </main>
 
-      {/* --- ADD ITEM MODAL OVERLAY WITH FORM --- */}
+      {/* --- ADD ITEM MODAL OVERLAY --- */}
       <Dialog open={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} className="relative z-50">
         <DialogBackdrop className="fixed inset-0 bg-black/30 backdrop-blur-sm transition-opacity" />
         <div className="fixed inset-0 z-10 w-screen overflow-y-auto">

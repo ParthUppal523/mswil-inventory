@@ -80,6 +80,8 @@ class PurchaseOrderResponse(PurchaseOrderBase):
     status: str
     total_amount: Optional[float] = None
     created_at: datetime
+    customer_name: Optional[str] = None
+    organization_name: Optional[str] = None
 
     class Config:
         from_attributes = True

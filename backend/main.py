@@ -222,6 +222,66 @@ def delete_inventory_item(
     
     return {"message": f"Item code {item_code} has been successfully deleted from inventory."}
 
+@app.put("/admin/purchase-orders/{po_id}/invoice", response_model=schemas.PurchaseOrderResponse)
+def admin_generate_invoice(
+    po_id: int, 
+    db: Session = Depends(get_db),
+    admin_user: models.User = Depends(auth_utils.get_current_admin)
+):
+    """Admin workflow: Generate a Tax Invoice for an approved PO and update its status."""
+    
+    # Fetch the Purchase Order
+    po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == po_id).first()
+    if not po:
+        raise HTTPException(status_code=404, detail="Purchase Order not found.")
+    
+    if po.status != "Approved":
+        raise HTTPException(status_code=400, detail="You can only generate invoices for 'Approved' orders.")
+        
+    # Fetch Customer Details
+    customer = db.query(models.User).filter(models.User.id == po.customer_id).first()
+    profile = db.query(models.CustomerProfile).filter(models.CustomerProfile.user_id == po.customer_id).first()
+    
+    # Fetch Line Items and reconstruct the list for the PDF Generator
+    po_items = db.query(models.PurchaseOrderItem).filter(models.PurchaseOrderItem.po_id == po.id).all()
+    pdf_item_list = []
+    
+    for item in po_items:
+        inv_item = db.query(models.InventoryItem).filter(models.InventoryItem.item_code == item.item_code).first()
+        pdf_item_list.append({
+            "code": item.item_code,
+            "name": inv_item.item_name if inv_item else "Unknown Item",
+            "serial": inv_item.serial_number if inv_item else "",
+            "quantity": item.ordered_quantity,
+            "price": item.unit_price
+        })
+        
+    # Prepare Dictionaries for PDF Generator
+    customer_dict = {
+        "company": profile.organization_name if profile else customer.username,
+        "email": customer.email,
+        "gst_number": profile.gst_number if profile else ""
+    }
+    
+    address_dict = {
+        "shipping": po.shipping_address,
+        "billing": po.billing_address
+    }
+    
+    # Ensure invoices directory exists
+    os.makedirs("invoices", exist_ok=True)
+    inv_file = f"invoices/INV_{po.id}_{customer.username}.pdf"
+    
+    # Generate the Invoice PDF
+    pdf_utils.generate_enterprise_pdf(inv_file, "TAX INVOICE", po.id, customer_dict, pdf_item_list, address_dict)
+    
+    # Update Status to Invoiced and Save
+    po.status = "Invoiced"
+    db.commit()
+    db.refresh(po)
+    
+    return po
+
 @app.post("/purchase-order", response_model=schemas.PurchaseOrderResponse)
 def create_purchase_order(
     po_request: schemas.PurchaseOrderCreate, 
@@ -342,6 +402,13 @@ def get_purchase_orders(
         # Customers can only see their own POs
         pos = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.customer_id == current_user.id).all()
         
+    for po in pos:
+        customer = db.query(models.User).filter(models.User.id == po.customer_id).first()
+        if customer:
+            po.customer_name = f"{customer.first_name} {customer.last_name}".strip() or customer.username
+            profile = db.query(models.CustomerProfile).filter(models.CustomerProfile.user_id == customer.id).first()
+            po.organization_name = profile.organization_name if profile else "N/A"
+            
     return pos
 
 @app.get("/purchase-orders/{po_id}/download")
