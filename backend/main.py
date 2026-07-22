@@ -115,6 +115,46 @@ def approve_user(user_id: int, db: Session = Depends(get_db)):
     
     return {"message": f"User '{user.username}' has been approved and notified."}
 
+@app.get("/admin/customers")
+def get_all_customers(
+    db: Session = Depends(get_db), 
+    admin_user: models.User = Depends(auth_utils.get_current_admin)
+):
+    """Admin workflow: Fetch all customers and their organization details."""
+    customers = db.query(models.User).filter(models.User.role == "customer").all()
+    
+    result = []
+    for c in customers:
+        profile = db.query(models.CustomerProfile).filter(models.CustomerProfile.user_id == c.id).first()
+        result.append({
+            "id": c.id,
+            "name": f"{c.first_name} {c.last_name}".strip() or c.username,
+            "email": c.email,
+            "organization": profile.organization_name if profile else "N/A",
+            "is_approved": c.is_approved
+        })
+    return result
+
+@app.delete("/admin/users/{user_id}")
+def delete_user(
+    user_id: int, 
+    db: Session = Depends(get_db), 
+    admin_user: models.User = Depends(auth_utils.get_current_admin)
+):
+    """Admin workflow: Delete a user."""
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    try:
+        # If the user has existing POs, the deletion will fail due to foreign key constraints
+        db.delete(user)
+        db.commit()
+        return {"message": "User deleted successfully."}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Cannot delete a user who has existing Purchase Orders.")
+
 @app.post("/inventory", response_model=schemas.InventoryItemResponse)
 def add_inventory_item(
     item: schemas.InventoryItemCreate, 
@@ -408,7 +448,7 @@ def get_purchase_orders(
             po.customer_name = f"{customer.first_name} {customer.last_name}".strip() or customer.username
             profile = db.query(models.CustomerProfile).filter(models.CustomerProfile.user_id == customer.id).first()
             po.organization_name = profile.organization_name if profile else "N/A"
-            
+
     return pos
 
 @app.get("/purchase-orders/{po_id}/download")

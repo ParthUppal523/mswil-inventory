@@ -1,14 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Disclosure, DisclosureButton, DisclosurePanel, Menu, MenuButton, MenuItem, MenuItems, Dialog, DialogPanel, DialogTitle, DialogBackdrop } from '@headlessui/react';
-import { Bars3Icon, BellIcon, XMarkIcon, MagnifyingGlassIcon, EllipsisVerticalIcon, ArrowDownTrayIcon, DocumentTextIcon, DocumentArrowDownIcon } from '@heroicons/react/24/outline';
+import { Bars3Icon, BellIcon, XMarkIcon, MagnifyingGlassIcon, EllipsisVerticalIcon, ArrowDownTrayIcon, DocumentTextIcon, DocumentArrowDownIcon, CheckCircleIcon, TrashIcon } from '@heroicons/react/24/outline';
 
-const user = { name: 'Admin User', email: 'admin@mswil.com' };
-const navigation = [
-  { name: 'Dashboard' },
-  { name: 'Inventory' },
-  { name: 'Customers' },
-  { name: 'Purchase Orders' },
-];
 const userNavigation = [
   { name: 'Your profile', href: '#' },
   { name: 'Settings', href: '#' },
@@ -22,10 +15,10 @@ function classNames(...classes: string[]) {
 const StatusBadge = ({ status }: { status: string }) => {
   let colorClass = 'bg-gray-100 text-gray-800 border-gray-200';
   if (status === 'Approved' || status === 'In Stock' || status === 'Available') {
-    colorClass = 'bg-green-100 text-green-800 border-green-200';
+    colorClass = 'bg-emerald-100 text-emerald-800 border-emerald-200';
   } else if (status === 'Invoiced') {
     colorClass = 'bg-indigo-100 text-indigo-800 border-indigo-200';
-  } else if (status === 'Backordered') {
+  } else if (status === 'Backordered' || status === 'Pending') {
     colorClass = 'bg-orange-100 text-orange-800 border-orange-200';
   } else if (status === 'Low Stock' || status === 'Out of Stock') {
     colorClass = 'bg-red-100 text-red-800 border-red-200';
@@ -42,14 +35,21 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
   const [inventory, setInventory] = useState<any[]>([]);
   const [recentPOs, setRecentPOs] = useState<any[]>([]);
   const [allPOs, setAllPOs] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]); // New Customer State
   const [loading, setLoading] = useState(true);
 
   const [activeTab, setActiveTab] = useState('Dashboard');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
-  // --- EXPANDABLE ROW STATE ---
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [expandedPoRow, setExpandedPoRow] = useState<number | null>(null);
+
+  const navigation = [
+    { name: 'Dashboard' },
+    { name: 'Inventory' },
+    { name: 'Customers' },
+    { name: 'Purchase Orders' },
+  ];
 
   const [newItem, setNewItem] = useState({
     item_code: '',
@@ -62,7 +62,6 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
   const [addError, setAddError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // --- EXPANDABLE ROW OUTSIDE-CLICK LISTENER ---
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -104,9 +103,71 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
     }
   };
 
+  const fetchCustomers = async () => {
+    const token = localStorage.getItem("mswil_token");
+    if (!token) return;
+    try {
+      const res = await fetch("http://localhost:8000/admin/customers", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setCustomers(await res.json());
+      }
+    } catch (error) {
+      console.error("Failed to fetch customers:", error);
+    }
+  };
+
   useEffect(() => {
     fetchDashboardData();
   }, []);
+
+  // Fetch customers dynamically when switching to the Customers tab
+  useEffect(() => {
+    if (activeTab === 'Customers') {
+      fetchCustomers();
+    }
+  }, [activeTab]);
+
+  // --- CUSTOMER MANAGEMENT HANDLERS ---
+  const handleApproveCustomer = async (userId: number) => {
+    const token = localStorage.getItem("mswil_token");
+    try {
+      const res = await fetch(`http://localhost:8000/admin/approve-user/${userId}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        alert("Customer approved successfully!");
+        fetchCustomers();
+      } else {
+        const err = await res.json();
+        alert(err.detail || "Failed to approve customer.");
+      }
+    } catch (error) {
+      alert("Network error.");
+    }
+  };
+
+  const handleDeleteCustomer = async (userId: number) => {
+    if (!window.confirm("Are you sure you want to permanently delete this customer?")) return;
+    
+    const token = localStorage.getItem("mswil_token");
+    try {
+      const res = await fetch(`http://localhost:8000/admin/users/${userId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setCustomers(prev => prev.filter(c => c.id !== userId));
+      } else {
+        const err = await res.json();
+        alert(err.detail || "Failed to delete customer.");
+      }
+    } catch (error) {
+      alert("Network error.");
+    }
+  };
 
   // --- SECURE PDF DOCUMENT VIEWER ---
   const handleViewDocument = async (e: React.MouseEvent, poId: number, docType: 'po' | 'invoice') => {
@@ -146,7 +207,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
       });
 
       if (response.ok) {
-        await fetchDashboardData(); // Refresh list to instantly reflect 'Invoiced' status
+        await fetchDashboardData(); 
       } else {
         const errorData = await response.json();
         alert(errorData.detail || "Failed to generate invoice.");
@@ -458,7 +519,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                     </div>
                   </div>
 
-                  {/* Right Card: Recent POs */}
+                  {/* Right Card: Recent POs (Enhanced View with GST) */}
                   <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full">
                     <div className="px-6 py-5 border-b border-gray-100 flex justify-between items-center bg-white">
                       <h3 className="text-lg font-semibold text-gray-900">Recent POs</h3>
@@ -469,58 +530,66 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                         {recentPOs.length === 0 ? (
                           <li className="p-6 text-center text-gray-500 text-sm">No recent orders.</li>
                         ) : (
-                          recentPOs.map((po) => (
-                            <li key={po.id} className="p-6 hover:bg-gray-50 transition flex flex-col gap-2">
-                              
-                              <div className="flex justify-between items-center">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-bold text-gray-900">Order #{po.id}</span>
-                                  <span className="text-xs text-gray-400">
-                                    • {po.created_at ? new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(po.created_at)) : '--'}
-                                  </span>
+                          recentPOs.map((po) => {
+                            const isPOInvoiced = po.status === 'Invoiced';
+                            const displayTotal = isPOInvoiced ? po.total_amount * 1.18 : po.total_amount;
+
+                            return (
+                              <li key={po.id} className="p-6 hover:bg-gray-50 transition flex flex-col gap-2">
+                                <div className="flex justify-between items-center">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-gray-900">Order #{po.id}</span>
+                                    <span className="text-xs text-gray-400">
+                                      • {po.created_at ? new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(po.created_at)) : '--'}
+                                    </span>
+                                  </div>
+                                  <StatusBadge status={po.status} />
                                 </div>
-                                <StatusBadge status={po.status} />
-                              </div>
 
-                              <div className="flex justify-between items-start text-sm mt-1">
-                                <div>
-                                  <div className="font-bold text-gray-800">{po.organization_name || 'Individual Customer'}</div>
-                                  <div className="text-xs text-gray-500">{po.customer_name || `Customer #${po.customer_id}`}</div>
+                                <div className="flex justify-between items-start text-sm mt-1">
+                                  <div>
+                                    <div className="font-bold text-gray-800">{po.organization_name || 'Individual Customer'}</div>
+                                    <div className="text-xs text-gray-500">{po.customer_name || `Customer #${po.customer_id}`}</div>
+                                  </div>
+                                  <div className="text-right">
+                                    <span className="font-black text-gray-900 text-base">
+                                      {po.total_amount ? `₹${displayTotal.toFixed(2)}` : '₹ --'}
+                                    </span>
+                                    <div className="text-[10px] text-gray-400 font-normal mt-0.5">
+                                      {isPOInvoiced ? 'Incl. of GST (18%)' : 'Excl. of GST'}
+                                    </div>
+                                  </div>
                                 </div>
-                                <span className="font-black text-gray-900 text-base">
-                                  {po.total_amount ? `₹${po.total_amount.toFixed(2)}` : '₹ --'}
-                                </span>
-                              </div>
 
-                              <div className="flex justify-end gap-2 mt-2 pt-2 border-t border-gray-100">
-                                <button 
-                                  onClick={(e) => handleViewDocument(e, po.id, 'po')}
-                                  className="text-xs bg-gray-100 text-gray-700 hover:bg-gray-200 px-2.5 py-1 rounded font-medium transition inline-flex items-center gap-1"
-                                >
-                                  <DocumentTextIcon className="h-3.5 w-3.5" /> PO PDF
-                                </button>
-                                
-                                {po.status === 'Approved' && (
+                                <div className="flex justify-end gap-2 mt-2 pt-2 border-t border-gray-100">
                                   <button 
-                                    onClick={(e) => handleGenerateInvoice(e, po.id)}
-                                    className="text-xs bg-emerald-600 text-white hover:bg-emerald-700 px-2.5 py-1 rounded font-bold transition shadow-sm"
+                                    onClick={(e) => handleViewDocument(e, po.id, 'po')}
+                                    className="text-emerald-600 hover:text-emerald-900 bg-emerald-50 px-3 py-1.5 rounded transition inline-flex items-center gap-1 text-xs font-medium"
                                   >
-                                    Raise Invoice
+                                    <DocumentTextIcon className="h-3.5 w-3.5" /> PO PDF
                                   </button>
-                                )}
+                                  
+                                  {po.status === 'Approved' && (
+                                    <button 
+                                      onClick={(e) => handleGenerateInvoice(e, po.id)}
+                                      className="text-xs bg-emerald-600 text-white hover:bg-emerald-700 px-3 py-1.5 rounded font-bold transition shadow-sm border border-emerald-200"
+                                    >
+                                      Generate Invoice
+                                    </button>
+                                  )}
 
-                                {po.status === 'Invoiced' && (
-                                  <button 
-                                    onClick={(e) => handleViewDocument(e, po.id, 'invoice')}
-                                    className="text-xs bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-2.5 py-1 rounded font-medium transition inline-flex items-center gap-1"
-                                  >
-                                    <DocumentArrowDownIcon className="h-3.5 w-3.5" /> Invoice
-                                  </button>
-                                )}
-                              </div>
-
-                            </li>
-                          ))
+                                  {po.status === 'Invoiced' && (
+                                    <button 
+                                      onClick={(e) => handleViewDocument(e, po.id, 'invoice')}
+                                      className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 px-3 py-1.5 rounded transition inline-flex items-center gap-1 text-xs font-medium"
+                                    >
+                                      <DocumentArrowDownIcon className="h-3.5 w-3.5" /> Invoice
+                                    </button>
+                                  )}
+                                </div>
+                              </li>
+                            );
+                          })
                         )}
                       </ul>
                     </div>
@@ -581,7 +650,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                                 
                                 <td className={classNames(
                                   "px-6 py-4 text-sm text-gray-500 transition-all duration-200",
-                                  isExpanded ? "whitespace-normal wrap-break-words min-w-[250px]" : "truncate max-w-xs"
+                                  isExpanded ? "whitespace-normal wrap-break-words min-w-62.5" : "truncate max-w-xs"
                                 )}>
                                   {item.description || '--'}
                                 </td>
@@ -620,6 +689,60 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                 </div>
               )}
 
+              {/* --- CUSTOMERS TAB --- */}
+              {activeTab === 'Customers' && (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                  <div className="px-6 py-5 border-b border-gray-100 flex justify-between items-center bg-white">
+                    <h3 className="text-lg font-semibold text-gray-900">Manage Customers</h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50/50">
+                        <tr>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Customer Name</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Organization</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                          <th className="px-6 py-4 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 bg-white">
+                        {customers.length === 0 ? (
+                          <tr><td colSpan={5} className="px-6 py-12 text-center text-gray-500">No customers registered yet.</td></tr>
+                        ) : (
+                          customers.map((c) => (
+                            <tr key={c.id} className="hover:bg-gray-50 transition-colors">
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{c.name}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{c.organization}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{c.email}</td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <StatusBadge status={c.is_approved ? 'Approved' : 'Pending'} />
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap flex justify-center gap-2">
+                                {!c.is_approved && (
+                                  <button 
+                                    onClick={() => handleApproveCustomer(c.id)}
+                                    className="text-xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-3 py-1.5 rounded font-bold transition shadow-sm border border-emerald-200 inline-flex items-center gap-1"
+                                  >
+                                    <CheckCircleIcon className="h-4 w-4" /> Approve
+                                  </button>
+                                )}
+                                <button 
+                                  onClick={() => handleDeleteCustomer(c.id)}
+                                  className="text-xs bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded font-medium transition inline-flex items-center gap-1"
+                                >
+                                  <TrashIcon className="h-4 w-4" /> Delete
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
               {/* --- PURCHASE ORDERS TAB (Detailed View) --- */}
               {activeTab === 'Purchase Orders' && (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -633,7 +756,6 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                           <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
                           <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">PO ID</th>
                           <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Organization</th>
-                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Customer Name</th>
                           <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Value</th>
                           <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Shipping Address</th>
                           <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Billing Address</th>
@@ -643,10 +765,12 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                       </thead>
                       <tbody className="divide-y divide-gray-100 bg-white">
                         {allPOs.length === 0 ? (
-                          <tr><td colSpan={9} className="px-6 py-12 text-center text-gray-500">No purchase orders recorded yet.</td></tr>
+                          <tr><td colSpan={8} className="px-6 py-12 text-center text-gray-500">No purchase orders recorded yet.</td></tr>
                         ) : (
                           allPOs.map((po) => {
                             const isExpanded = expandedPoRow === po.id;
+                            const isPOInvoiced = po.status === 'Invoiced';
+                            const displayTotal = isPOInvoiced ? po.total_amount * 1.18 : po.total_amount;
 
                             return (
                               <tr 
@@ -658,15 +782,22 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                                   {po.created_at ? new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(po.created_at)) : '--'}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">#{po.id}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-800">{po.organization_name || 'N/A'}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{po.customer_name || `User #${po.customer_id}`}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
-                                  {po.total_amount ? `₹${po.total_amount.toFixed(2)}` : '₹ --'}
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                  <div className="text-sm font-bold text-gray-800">{po.organization_name || 'N/A'}</div>
+                                  <div className="text-xs text-gray-500">{po.customer_name || `User #${po.customer_id}`}</div>
                                 </td>
-                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-[200px]" : "truncate max-w-[150px]")}>
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                  <div className="text-sm font-semibold text-gray-900">
+                                    {po.total_amount ? `₹${displayTotal.toFixed(2)}` : '₹ --'}
+                                  </div>
+                                  <div className="text-[10px] text-gray-400 font-normal mt-0.5">
+                                    {isPOInvoiced ? 'Incl. of GST (18%)' : 'Excl. of GST'}
+                                  </div>
+                                </td>
+                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-50" : "truncate max-w-37.5")}>
                                   {po.shipping_address || '--'}
                                 </td>
-                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-[200px]" : "truncate max-w-[150px]")}>
+                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-50" : "truncate max-w-37.5")}>
                                   {po.billing_address || '--'}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap">
@@ -676,7 +807,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                                   
                                   <button 
                                     onClick={(e) => handleViewDocument(e, po.id, 'po')}
-                                    className="text-xs bg-gray-100 text-gray-700 hover:bg-gray-200 px-3 py-1.5 rounded font-medium transition inline-flex items-center gap-1"
+                                    className="text-emerald-600 hover:text-emerald-900 bg-emerald-50 px-3 py-1.5 rounded transition inline-flex items-center gap-1 text-xs font-medium"
                                   >
                                     <DocumentTextIcon className="h-4 w-4" /> PO PDF
                                   </button>
@@ -693,7 +824,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                                   {po.status === 'Invoiced' && (
                                     <button 
                                       onClick={(e) => handleViewDocument(e, po.id, 'invoice')}
-                                      className="text-xs bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-3 py-1.5 rounded font-medium transition inline-flex items-center gap-1"
+                                      className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 px-3 py-1.5 rounded transition inline-flex items-center gap-1 text-xs font-medium"
                                     >
                                       <DocumentArrowDownIcon className="h-4 w-4" /> Invoice
                                     </button>
