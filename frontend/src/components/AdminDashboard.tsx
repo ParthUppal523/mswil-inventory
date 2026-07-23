@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Disclosure, DisclosureButton, DisclosurePanel, Menu, MenuButton, MenuItem, MenuItems, Dialog, DialogPanel, DialogTitle, DialogBackdrop } from '@headlessui/react';
-import { Bars3Icon, BellIcon, XMarkIcon, MagnifyingGlassIcon, EllipsisVerticalIcon, ArrowDownTrayIcon, DocumentTextIcon, DocumentArrowDownIcon, CheckCircleIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { Bars3Icon, BellIcon, XMarkIcon, MagnifyingGlassIcon, EllipsisVerticalIcon, DocumentTextIcon, DocumentArrowDownIcon, CheckCircleIcon, TrashIcon, NoSymbolIcon } from '@heroicons/react/24/outline';
 
 const userNavigation = [
   { name: 'Your profile', href: '#' },
@@ -35,7 +35,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
   const [inventory, setInventory] = useState<any[]>([]);
   const [recentPOs, setRecentPOs] = useState<any[]>([]);
   const [allPOs, setAllPOs] = useState<any[]>([]);
-  const [customers, setCustomers] = useState<any[]>([]); // New Customer State
+  const [customersList, setCustomersList] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
 
   const [activeTab, setActiveTab] = useState('Dashboard');
@@ -47,7 +47,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
   const navigation = [
     { name: 'Dashboard' },
     { name: 'Inventory' },
-    { name: 'Customers' },
+    { name: 'Manage Customers' },
     { name: 'Purchase Orders' },
   ];
 
@@ -107,11 +107,12 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
     const token = localStorage.getItem("mswil_token");
     if (!token) return;
     try {
+      // Switched endpoint to fetch ONLY customers
       const res = await fetch("http://localhost:8000/admin/customers", {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
-        setCustomers(await res.json());
+        setCustomersList(await res.json());
       }
     } catch (error) {
       console.error("Failed to fetch customers:", error);
@@ -122,15 +123,14 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
     fetchDashboardData();
   }, []);
 
-  // Fetch customers dynamically when switching to the Customers tab
   useEffect(() => {
-    if (activeTab === 'Customers') {
+    if (activeTab === 'Manage Customers') {
       fetchCustomers();
     }
   }, [activeTab]);
 
   // --- CUSTOMER MANAGEMENT HANDLERS ---
-  const handleApproveCustomer = async (userId: number) => {
+  const handleApproveUser = async (userId: number) => {
     const token = localStorage.getItem("mswil_token");
     try {
       const res = await fetch(`http://localhost:8000/admin/approve-user/${userId}`, {
@@ -138,7 +138,6 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
-        alert("Customer approved successfully!");
         fetchCustomers();
       } else {
         const err = await res.json();
@@ -149,8 +148,27 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
     }
   };
 
-  const handleDeleteCustomer = async (userId: number) => {
-    if (!window.confirm("Are you sure you want to permanently delete this customer?")) return;
+  const handleRevokeUser = async (userId: number) => {
+    if (!window.confirm("Are you sure you want to temporarily revoke this customer's access?")) return;
+    const token = localStorage.getItem("mswil_token");
+    try {
+      const res = await fetch(`http://localhost:8000/admin/revoke-user/${userId}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        fetchCustomers();
+      } else {
+        const err = await res.json();
+        alert(err.detail || "Failed to revoke customer access.");
+      }
+    } catch (error) {
+      alert("Network error.");
+    }
+  };
+
+  const handleDeleteUser = async (userId: number) => {
+    if (!window.confirm("Are you sure you want to permanently delete this customer account?")) return;
     
     const token = localStorage.getItem("mswil_token");
     try {
@@ -159,7 +177,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
-        setCustomers(prev => prev.filter(c => c.id !== userId));
+        setCustomersList(prev => prev.filter(u => u.id !== userId));
       } else {
         const err = await res.json();
         alert(err.detail || "Failed to delete customer.");
@@ -519,7 +537,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                     </div>
                   </div>
 
-                  {/* Right Card: Recent POs (Enhanced View with GST) */}
+                  {/* Right Card: Recent POs */}
                   <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full">
                     <div className="px-6 py-5 border-b border-gray-100 flex justify-between items-center bg-white">
                       <h3 className="text-lg font-semibold text-gray-900">Recent POs</h3>
@@ -566,7 +584,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                                     onClick={(e) => handleViewDocument(e, po.id, 'po')}
                                     className="text-emerald-600 hover:text-emerald-900 bg-emerald-50 px-3 py-1.5 rounded transition inline-flex items-center gap-1 text-xs font-medium"
                                   >
-                                    <DocumentTextIcon className="h-3.5 w-3.5" /> PO PDF
+                                    <DocumentTextIcon className="h-3.5 w-3.5" /> View PO
                                   </button>
                                   
                                   {po.status === 'Approved' && (
@@ -650,7 +668,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                                 
                                 <td className={classNames(
                                   "px-6 py-4 text-sm text-gray-500 transition-all duration-200",
-                                  isExpanded ? "whitespace-normal wrap-break-words min-w-62.5" : "truncate max-w-xs"
+                                  isExpanded ? "whitespace-normal wrap-break-words min-w-[250px]" : "truncate max-w-xs"
                                 )}>
                                   {item.description || '--'}
                                 </td>
@@ -689,8 +707,8 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                 </div>
               )}
 
-              {/* --- CUSTOMERS TAB --- */}
-              {activeTab === 'Customers' && (
+              {/* --- MANAGE CUSTOMERS TAB --- */}
+              {activeTab === 'Manage Customers' && (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                   <div className="px-6 py-5 border-b border-gray-100 flex justify-between items-center bg-white">
                     <h3 className="text-lg font-semibold text-gray-900">Manage Customers</h3>
@@ -707,29 +725,47 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100 bg-white">
-                        {customers.length === 0 ? (
+                        {customersList.length === 0 ? (
                           <tr><td colSpan={5} className="px-6 py-12 text-center text-gray-500">No customers registered yet.</td></tr>
                         ) : (
-                          customers.map((c) => (
+                          customersList.map((c) => (
                             <tr key={c.id} className="hover:bg-gray-50 transition-colors">
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{c.name}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{c.organization}</td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-bold text-gray-900">{c.name}</div>
+                                <div className="text-xs text-gray-400 mt-0.5">ID: #{c.id} &bull; Login: {c.username}</div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm text-gray-600 font-medium">{c.organization}</div>
+                                {/* Retained Department Logic visually in case unified tables are requested later */}
+                                {c.department && (
+                                  <div className="text-xs text-gray-400 mt-0.5">{c.department}</div>
+                                )}
+                              </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{c.email}</td>
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <StatusBadge status={c.is_approved ? 'Approved' : 'Pending'} />
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap flex justify-center gap-2">
-                                {!c.is_approved && (
+                                
+                                {c.is_approved ? (
                                   <button 
-                                    onClick={() => handleApproveCustomer(c.id)}
+                                    onClick={() => handleRevokeUser(c.id)}
+                                    className="text-xs bg-orange-50 text-orange-700 hover:bg-orange-100 px-3 py-1.5 rounded font-medium transition inline-flex items-center gap-1 border border-orange-200"
+                                  >
+                                    <NoSymbolIcon className="h-4 w-4" /> Revoke
+                                  </button>
+                                ) : (
+                                  <button 
+                                    onClick={() => handleApproveUser(c.id)}
                                     className="text-xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-3 py-1.5 rounded font-bold transition shadow-sm border border-emerald-200 inline-flex items-center gap-1"
                                   >
                                     <CheckCircleIcon className="h-4 w-4" /> Approve
                                   </button>
                                 )}
+                                
                                 <button 
-                                  onClick={() => handleDeleteCustomer(c.id)}
-                                  className="text-xs bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded font-medium transition inline-flex items-center gap-1"
+                                  onClick={() => handleDeleteUser(c.id)}
+                                  className="text-xs bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded font-medium transition inline-flex items-center gap-1 border border-red-200"
                                 >
                                   <TrashIcon className="h-4 w-4" /> Delete
                                 </button>
@@ -794,10 +830,10 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                                     {isPOInvoiced ? 'Incl. of GST (18%)' : 'Excl. of GST'}
                                   </div>
                                 </td>
-                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-50" : "truncate max-w-37.5")}>
+                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-[200px]" : "truncate max-w-[150px]")}>
                                   {po.shipping_address || '--'}
                                 </td>
-                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-50" : "truncate max-w-37.5")}>
+                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-[200px]" : "truncate max-w-[150px]")}>
                                   {po.billing_address || '--'}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap">

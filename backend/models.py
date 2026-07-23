@@ -33,7 +33,7 @@ class CustomerProfile(Base):
     user_id = Column(Integer, ForeignKey("users.id"), unique=True)
     
     organization_name = Column(String, index=True)
-    gst_number = Column(String, unique=True, index=True)
+    gst_number = Column(String, index=True)
     billing_address = Column(Text)
     shipping_address = Column(Text)
     contact_phone = Column(String)
@@ -79,6 +79,7 @@ class PurchaseOrder(Base):
     billing_address = Column(String, nullable=True)
     gst_number = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    invoiced_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
 class PurchaseOrderItem(Base):
     __tablename__ = "purchase_order_items"

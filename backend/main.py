@@ -54,6 +54,13 @@ def register_user(request: schemas.UserRegistrationRequest, db: Session = Depend
     # Ensure email is not already in use
     if db.query(models.User).filter(models.User.email == request.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
+    
+    if request.role.lower() == "admin":
+        if not auth_utils.is_valid_admin_request(request.email, request.company):
+            raise HTTPException(
+                status_code=403, 
+                detail="Admin registration requires a valid Motherson email domain or organization name."
+            )
 
     # Generate the unique username securely
     unique_username = auth_utils.generate_unique_username(db, request.first_name, request.last_name, request.role)
@@ -93,7 +100,7 @@ def register_user(request: schemas.UserRegistrationRequest, db: Session = Depend
     }
 
 @app.put("/admin/approve-user/{user_id}")
-def approve_user(user_id: int, db: Session = Depends(get_db)):
+def approve_user(user_id: int, db: Session = Depends(get_db), admin_user: models.User = Depends(auth_utils.get_current_admin)):
     """Endpoint for an admin to approve a new user account."""
     
     # Search the database for the user by their ID
@@ -102,6 +109,8 @@ def approve_user(user_id: int, db: Session = Depends(get_db)):
     # Validation Checks
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    if user.role == "admin": raise HTTPException(status_code=403, detail="Admins cannot approve other admins.")
     
     if user.is_approved:
         raise HTTPException(status_code=400, detail="User is already approved")
@@ -120,8 +129,8 @@ def get_all_customers(
     db: Session = Depends(get_db), 
     admin_user: models.User = Depends(auth_utils.get_current_admin)
 ):
-    """Admin workflow: Fetch all customers and their organization details."""
-    customers = db.query(models.User).filter(models.User.role == "customer").all()
+    """Admin workflow: Fetch ONLY customers. Admins are hidden."""
+    customers = db.query(models.User).filter(models.User.role == "customer").order_by(models.User.id.desc()).all()
     
     result = []
     for c in customers:
@@ -129,31 +138,37 @@ def get_all_customers(
         result.append({
             "id": c.id,
             "name": f"{c.first_name} {c.last_name}".strip() or c.username,
+            "username": c.username,
             "email": c.email,
-            "organization": profile.organization_name if profile else "N/A",
+            "organization": profile.organization_name if profile else "Individual Customer",
+            "department": None, # Customers don't have internal departments
             "is_approved": c.is_approved
         })
     return result
 
-@app.delete("/admin/users/{user_id}")
-def delete_user(
-    user_id: int, 
-    db: Session = Depends(get_db), 
-    admin_user: models.User = Depends(auth_utils.get_current_admin)
-):
-    """Admin workflow: Delete a user."""
+@app.put("/admin/revoke-user/{user_id}")
+def revoke_user(user_id: int, db: Session = Depends(get_db), admin_user: models.User = Depends(auth_utils.get_current_admin)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    if not user: raise HTTPException(status_code=404, detail="User not found")
+    if user.role == "admin": raise HTTPException(status_code=403, detail="Admins cannot revoke other admins.")
+        
+    user.is_approved = False
+    db.commit()
+    return {"message": "User access has been revoked successfully."}
+
+@app.delete("/admin/users/{user_id}")
+def delete_user(user_id: int, db: Session = Depends(get_db), admin_user: models.User = Depends(auth_utils.get_current_admin)):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user: raise HTTPException(status_code=404, detail="User not found")
+    if user.role == "admin": raise HTTPException(status_code=403, detail="Security protocol: Admins cannot delete other admins.")
         
     try:
-        # If the user has existing POs, the deletion will fail due to foreign key constraints
         db.delete(user)
         db.commit()
-        return {"message": "User deleted successfully."}
+        return {"message": f"User {user.username} deleted successfully."}
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=400, detail="Cannot delete a user who has existing Purchase Orders.")
+        raise HTTPException(status_code=400, detail="Cannot delete a user who has existing Purchase Orders. Please 'Revoke' their access instead.")
 
 @app.post("/inventory", response_model=schemas.InventoryItemResponse)
 def add_inventory_item(
@@ -317,6 +332,7 @@ def admin_generate_invoice(
     
     # Update Status to Invoiced and Save
     po.status = "Invoiced"
+    po.invoiced_by_id = admin_user.id
     db.commit()
     db.refresh(po)
     
