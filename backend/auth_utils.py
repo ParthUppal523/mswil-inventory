@@ -19,6 +19,25 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 # 1 hour expiration for security
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
+# --- ADMIN ELIGIBILITY LIST ---
+ALLOWED_ADMIN_DOMAINS = ["motherson.com", "mswil.com"]
+ALLOWED_ADMIN_ORGS = ["motherson", "mswil", "motherson sumi"]
+
+def is_valid_admin_request(email: str, company: str) -> bool:
+    """Validates if a user is allowed to request an Admin account based on domain or org name."""
+    # Check Email Domain
+    domain = email.split('@')[-1].lower()
+    if domain in ALLOWED_ADMIN_DOMAINS:
+        return True
+        
+    # Check Organization Name
+    company_lower = company.lower()
+    for allowed_org in ALLOWED_ADMIN_ORGS:
+        if allowed_org in company_lower:
+            return True
+            
+    return False
+
 # --- PASSWORD HASHING & VERIFICATION ---
 def get_password_hash(password: str) -> str:
     """Hashes a plaintext password using bcrypt."""
