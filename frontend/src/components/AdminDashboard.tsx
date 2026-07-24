@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, Fragment, useRef } from 'react';
 import { Disclosure, DisclosureButton, DisclosurePanel, Menu, MenuButton, MenuItem, MenuItems, Dialog, DialogPanel, DialogTitle, DialogBackdrop } from '@headlessui/react';
-import { Bars3Icon, BellIcon, XMarkIcon, MagnifyingGlassIcon, EllipsisVerticalIcon, DocumentTextIcon, DocumentArrowDownIcon, CheckCircleIcon, TrashIcon, UserIcon, ShieldCheckIcon, NoSymbolIcon, FunnelIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { Bars3Icon, BellIcon, XMarkIcon, MagnifyingGlassIcon, EllipsisVerticalIcon, DocumentTextIcon, DocumentArrowDownIcon, CheckCircleIcon, TrashIcon, UserIcon, ShieldCheckIcon, NoSymbolIcon, FunnelIcon, ArrowPathIcon, ClipboardDocumentListIcon, EyeIcon } from '@heroicons/react/24/outline';
 
 const userNavigation = [
   { name: 'Your profile', href: '#' },
@@ -31,6 +31,19 @@ const StatusBadge = ({ status }: { status: string }) => {
   );
 };
 
+const ActionBadge = ({ action }: { action: string }) => {
+  let colorClass = 'bg-gray-100 text-gray-800 border-gray-200';
+  if (action === 'CREATE' || action === 'APPROVE') colorClass = 'bg-emerald-100 text-emerald-800 border-emerald-200';
+  else if (action === 'UPDATE' || action === 'INVOICE') colorClass = 'bg-blue-100 text-blue-800 border-blue-200';
+  else if (action === 'DELETE' || action === 'REVOKE') colorClass = 'bg-red-100 text-red-800 border-red-200';
+
+  return (
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-[10px] font-black tracking-wider uppercase border ${colorClass}`}>
+      {action}
+    </span>
+  );
+};
+
 const RoleBadge = ({ role }: { role: string }) => {
   const isAdmin = role.toLowerCase() === 'admin';
   return (
@@ -48,10 +61,12 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
   const [recentPOs, setRecentPOs] = useState<any[]>([]);
   const [allPOs, setAllPOs] = useState<any[]>([]);
   const [customersList, setCustomersList] = useState<any[]>([]); 
+  const [activityLogs, setActivityLogs] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
 
   const [activeTab, setActiveTab] = useState('Dashboard');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const isDeepLink = useRef(false);
   
   // --- GLOBAL SEARCH & ADVANCED FILTER STATES ---
   const [searchQuery, setSearchQuery] = useState('');
@@ -63,12 +78,14 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
 
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [expandedPoRow, setExpandedPoRow] = useState<number | null>(null);
+  const [expandedLogRow, setExpandedLogRow] = useState<number | null>(null);
 
   const navigation = [
     { name: 'Dashboard' },
     { name: 'Inventory' },
-    { name: 'Customers' },
+    { name: 'Manage Customers' },
     { name: 'Purchase Orders' },
+    { name: 'Activity History' },
   ];
 
   const [newItem, setNewItem] = useState({
@@ -82,7 +99,6 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
   const [addError, setAddError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // --- CUSTOMER MODAL STATES ---
   const [customerToRevoke, setCustomerToRevoke] = useState<any>(null);
   const [isRevokeModalOpen, setIsRevokeModalOpen] = useState(false);
   const [isRevoking, setIsRevoking] = useState(false);
@@ -94,6 +110,10 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
 
   // Reset Filters when switching tabs
   useEffect(() => {
+    if (isDeepLink.current) {
+      isDeepLink.current = false;
+      return;
+    }
     setSearchQuery('');
     setSearchScope('all');
     setStatusFilter('all');
@@ -117,6 +137,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
       if (!target.closest('tr')) {
         setExpandedRow(null);
         setExpandedPoRow(null);
+        setExpandedLogRow(null);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -128,85 +149,66 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
     if (!token) return;
 
     try {
-      const invRes = await fetch("http://localhost:8000/inventory", {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (invRes.ok) {
-        const invData = await invRes.json();
-        setInventory(invData.sort((a: any, b: any) => a.item_code - b.item_code));
-      }
+      const invRes = await fetch("http://localhost:8000/inventory", { headers: { Authorization: `Bearer ${token}` }});
+      if (invRes.ok) setInventory((await invRes.json()).sort((a: any, b: any) => a.item_code - b.item_code));
 
-      const poRes = await fetch("http://localhost:8000/purchase-orders", {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const poRes = await fetch("http://localhost:8000/purchase-orders", { headers: { Authorization: `Bearer ${token}` }});
       if (poRes.ok) {
-        const poData = await poRes.json();
-        const sortedPOs = poData.sort((a: any, b: any) => b.id - a.id);
+        const sortedPOs = (await poRes.json()).sort((a: any, b: any) => b.id - a.id);
         setAllPOs(sortedPOs);
-        setRecentPOs(sortedPOs.slice(0, 5)); 
+        setRecentPOs(sortedPOs.slice(0, 3)); 
       }
-    } catch (error) {
-      console.error("Failed to fetch dashboard data:", error);
-    } finally {
-      setLoading(false);
-    }
+    } catch (error) { console.error("Failed to fetch dashboard data:", error); } 
+    finally { setLoading(false); }
   };
 
   const fetchCustomers = async () => {
     const token = localStorage.getItem("mswil_token");
     if (!token) return;
     try {
-      const res = await fetch("http://localhost:8000/admin/customers", {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) {
-        setCustomersList(await res.json());
-      }
-    } catch (error) {
-      console.error("Failed to fetch customers:", error);
-    }
+      const res = await fetch("http://localhost:8000/admin/customers", { headers: { Authorization: `Bearer ${token}` }});
+      if (res.ok) setCustomersList(await res.json());
+    } catch (error) { console.error("Failed to fetch customers:", error); }
   };
 
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
+  const fetchActivityLogs = async () => {
+    const token = localStorage.getItem("mswil_token");
+    if (!token) return;
+    try {
+      const res = await fetch("http://localhost:8000/admin/activity-logs", { headers: { Authorization: `Bearer ${token}` }});
+      if (res.ok) setActivityLogs(await res.json());
+    } catch (error) { console.error("Failed to fetch logs:", error); }
+  };
+
+  useEffect(() => { fetchDashboardData(); }, []);
 
   useEffect(() => {
-    if (activeTab === 'Customers') {
-      fetchCustomers();
-    }
+    if (activeTab === 'Manage Customers') fetchCustomers();
+    if (activeTab === 'Activity History') fetchActivityLogs();
   }, [activeTab]);
 
 
   // ==========================================
-  // ENTERPRISE SEARCH & FILTER ENGINE
+  // SEARCH & FILTER ENGINE
   // ==========================================
 
   const filteredInventory = inventory.filter((item) => {
-    // 1. Status Filter
     if (statusFilter === 'in_stock' && item.quantity <= 0) return false;
     if (statusFilter === 'out_of_stock' && item.quantity > 0) return false;
 
-    // 2. Text Search
     const q = searchQuery.toLowerCase().trim().replace('#', '');
     if (!q) return true;
 
     if (searchScope === 'code') return item.item_code?.toString() === q;
     if (searchScope === 'name') return item.item_name?.toLowerCase().includes(q) || item.description?.toLowerCase().includes(q);
     
-    return (
-      item.item_code?.toString() === q ||
-      item.serial_number?.toLowerCase().includes(q) ||
-      item.item_name?.toLowerCase().includes(q)
-    );
+    return (item.item_code?.toString() === q || item.serial_number?.toLowerCase().includes(q) || item.item_name?.toLowerCase().includes(q));
   });
 
   let filteredCustomers = customersList.filter((c) => {
-    // 1. Status Filter
     if (statusFilter === 'approved' && !c.is_approved) return false;
     if (statusFilter === 'pending' && c.is_approved) return false;
 
-    // 2. Text Search
     const q = searchQuery.toLowerCase().trim().replace('#', '');
     if (!q) return true;
 
@@ -215,27 +217,16 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
     if (searchScope === 'org') return c.organization?.toLowerCase().includes(q);
     if (searchScope === 'email') return c.email?.toLowerCase().includes(q);
 
-    return (
-      c.id?.toString() === q ||
-      c.name?.toLowerCase().includes(q) ||
-      c.organization?.toLowerCase().includes(q) ||
-      c.email?.toLowerCase().includes(q)
-    );
+    return (c.id?.toString() === q || c.name?.toLowerCase().includes(q) || c.organization?.toLowerCase().includes(q) || c.email?.toLowerCase().includes(q));
   });
 
-  // Apply Sort to Customers
-  if (sortConfig === 'org_asc') {
-    filteredCustomers.sort((a, b) => (a.organization || '').localeCompare(b.organization || ''));
-  } else if (sortConfig === 'org_desc') {
-    filteredCustomers.sort((a, b) => (b.organization || '').localeCompare(a.organization || ''));
-  }
+  if (sortConfig === 'org_asc') filteredCustomers.sort((a, b) => (a.organization || '').localeCompare(b.organization || ''));
+  else if (sortConfig === 'org_desc') filteredCustomers.sort((a, b) => (b.organization || '').localeCompare(a.organization || ''));
 
   const applyPOFilters = (poList: any[]) => {
     let result = poList.filter((po) => {
-      // 1. Status Filter
       if (statusFilter !== 'all' && po.status?.toLowerCase() !== statusFilter.toLowerCase()) return false;
 
-      // 2. Text Search Filter
       const q = searchQuery.toLowerCase().trim().replace('#', '');
       let matchesSearch = true;
 
@@ -244,42 +235,78 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
         else if (searchScope === 'org') matchesSearch = po.organization_name?.toLowerCase().includes(q);
         else if (searchScope === 'name') matchesSearch = po.customer_name?.toLowerCase().includes(q);
         else if (searchScope === 'admin') matchesSearch = po.invoiced_by_name?.toLowerCase().includes(q);
-        else {
-          matchesSearch = (
-            po.id?.toString() === q ||
-            po.organization_name?.toLowerCase().includes(q) ||
-            po.customer_name?.toLowerCase().includes(q) ||
-            po.status?.toLowerCase().includes(q) ||
-            po.invoiced_by_name?.toLowerCase().includes(q)
-          );
-        }
+        else matchesSearch = (po.id?.toString() === q || po.organization_name?.toLowerCase().includes(q) || po.customer_name?.toLowerCase().includes(q) || po.status?.toLowerCase().includes(q) || po.invoiced_by_name?.toLowerCase().includes(q));
       }
 
-      // 3. Date Filter
       let matchesDate = true;
       if (po.created_at && (startDate || endDate)) {
         const poDate = new Date(po.created_at).toISOString().split('T')[0];
         if (startDate) matchesDate = matchesDate && (poDate >= startDate);
         if (endDate) matchesDate = matchesDate && (poDate <= endDate);
       }
-
       return matchesSearch && matchesDate;
     });
 
-    // 4. Apply Sort to POs
-    if (sortConfig === 'org_asc') {
-      result.sort((a, b) => (a.organization_name || '').localeCompare(b.organization_name || ''));
-    } else if (sortConfig === 'org_desc') {
-      result.sort((a, b) => (b.organization_name || '').localeCompare(a.organization_name || ''));
-    }
+    if (sortConfig === 'org_asc') result.sort((a, b) => (a.organization_name || '').localeCompare(b.organization_name || ''));
+    else if (sortConfig === 'org_desc') result.sort((a, b) => (b.organization_name || '').localeCompare(a.organization_name || ''));
+    
     return result;
   };
 
   const filteredPOs = applyPOFilters(allPOs);
   const filteredRecentPOs = applyPOFilters(recentPOs);
 
+  const filteredLogs = activityLogs.filter((log) => {
+    if (statusFilter !== 'all' && log.action_type?.toLowerCase() !== statusFilter.toLowerCase()) return false;
 
-  // --- CUSTOMER MANAGEMENT HANDLERS ---
+    const q = searchQuery.toLowerCase().trim().replace('#', '');
+    let matchesSearch = true;
+
+    if (q) {
+      if (searchScope === 'admin') matchesSearch = log.admin_name?.toLowerCase().includes(q) || log.admin_email?.toLowerCase().includes(q);
+      else if (searchScope === 'entity') matchesSearch = log.entity_type?.toLowerCase().includes(q) || log.entity_id?.toString().toLowerCase().includes(q);
+      else matchesSearch = (log.admin_name?.toLowerCase().includes(q) || log.entity_type?.toLowerCase().includes(q) || log.entity_id?.toString().toLowerCase().includes(q));
+    }
+
+    let matchesDate = true;
+    if (log.timestamp && (startDate || endDate)) {
+      const logDate = new Date(log.timestamp).toISOString().split('T')[0];
+      if (startDate) matchesDate = matchesDate && (logDate >= startDate);
+      if (endDate) matchesDate = matchesDate && (logDate <= endDate);
+    }
+    return matchesSearch && matchesDate;
+  });
+
+  // --- LOG DEEP LINK NAVIGATION HANDLER ---
+  const handleLogDetailsNavigation = (e: React.MouseEvent, log: any) => {
+    e.stopPropagation(); // Prevents the JSON row from expanding when clicking the button
+
+    isDeepLink.current = true;
+    
+    // Clear any residual date/status filters
+    setStatusFilter('all');
+    setStartDate('');
+    setEndDate('');
+    setSortConfig('default');
+    
+    // Inject the ID into the search bar
+    setSearchQuery(log.entity_id.toString());
+
+    // Route to the correct tab & scope
+    if (log.entity_type === 'InventoryItem') {
+      setActiveTab('Inventory');
+      setSearchScope('code');
+    } else if (log.entity_type === 'User') {
+      setActiveTab('Manage Customers');
+      setSearchScope('id');
+    } else if (log.entity_type === 'PurchaseOrder') {
+      setActiveTab('Purchase Orders');
+      setSearchScope('id');
+    }
+  };
+
+
+  // --- HANDLERS ---
   const handleApproveUser = async (userId: number) => {
     const token = localStorage.getItem("mswil_token");
     try {
@@ -312,69 +339,41 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
     finally { setIsDeletingCustomer(false); }
   };
 
-  // --- SECURE PDF DOCUMENT VIEWER ---
   const handleViewDocument = async (e: React.MouseEvent, poId: number, docType: 'po' | 'invoice') => {
     e.stopPropagation();
     const token = localStorage.getItem("mswil_token");
     if (!token) return;
-
     try {
-      const response = await fetch(`http://localhost:8000/purchase-orders/${poId}/download?doc_type=${docType}`, {
-        method: "GET",
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
+      const response = await fetch(`http://localhost:8000/purchase-orders/${poId}/download?doc_type=${docType}`, { method: "GET", headers: { Authorization: `Bearer ${token}` }});
       if (response.ok) {
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
         window.open(url, '_blank');
         setTimeout(() => window.URL.revokeObjectURL(url), 1000);
-      } else {
-        alert("Document not available or endpoint error.");
-      }
-    } catch (error) {
-      console.error("Error downloading document:", error);
-    }
+      } else alert("Document not available or endpoint error.");
+    } catch (error) { console.error("Error downloading document:", error); }
   };
 
-  // --- ADMIN GENERATE INVOICE HANDLER ---
   const handleGenerateInvoice = async (e: React.MouseEvent, poId: number) => {
     e.stopPropagation();
     const token = localStorage.getItem("mswil_token");
     if (!token) return;
-
     try {
-      const response = await fetch(`http://localhost:8000/admin/purchase-orders/${poId}/invoice`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      if (response.ok) {
-        await fetchDashboardData(); 
-      } else {
-        const errorData = await response.json();
-        alert(errorData.detail || "Failed to generate invoice.");
-      }
-    } catch (error) {
-      console.error("Failed to raise invoice:", error);
-      alert("Network error. Could not connect to the server.");
-    }
+      const response = await fetch(`http://localhost:8000/admin/purchase-orders/${poId}/invoice`, { method: "PUT", headers: { Authorization: `Bearer ${token}` }});
+      if (response.ok) await fetchDashboardData(); 
+      else alert((await response.json()).detail || "Failed to generate invoice.");
+    } catch (error) { alert("Network error. Could not connect to the server."); }
   };
 
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     setAddError('');
     setIsSubmitting(true);
-
     const token = localStorage.getItem("mswil_token");
-
     try {
       const response = await fetch("http://localhost:8000/inventory", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           item_code: newItem.item_code,
           item_name: newItem.item_name,
@@ -384,21 +383,14 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
           description: newItem.description || null
         })
       });
-
       if (response.ok) {
         const addedData = await response.json();
         setInventory((prev) => [...prev, addedData].sort((a, b) => a.item_code - b.item_code));
         setIsAddModalOpen(false);
         setNewItem({ item_code: '', item_name: '', serial_number: '', price: '', quantity: '', description: '' });
-      } else {
-        const errorData = await response.json();
-        setAddError(errorData.detail || "Failed to add inventory item.");
-      }
-    } catch (error) {
-      setAddError("Network error. Could not connect to the server.");
-    } finally {
-      setIsSubmitting(false);
-    }
+      } else setAddError((await response.json()).detail || "Failed to add inventory item.");
+    } catch (error) { setAddError("Network error. Could not connect to the server."); } 
+    finally { setIsSubmitting(false); }
   };
 
   const [editItem, setEditItem] = useState<any>(null);
@@ -419,7 +411,6 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
     setEditError('');
     setIsEditing(true);
     const token = localStorage.getItem("mswil_token");
-
     try {
       const response = await fetch(`http://localhost:8000/inventory/${editItem.item_code}`, {
         method: "PUT",
@@ -432,44 +423,27 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
           description: editItem.description || null
         })
       });
-
       if (response.ok) {
         const updatedData = await response.json();
-        setInventory((prev) => 
-          prev.map((item) => (item.item_code === updatedData.item_code ? updatedData : item))
-              .sort((a, b) => a.item_code - b.item_code)
-        );
+        setInventory((prev) => prev.map((item) => (item.item_code === updatedData.item_code ? updatedData : item)).sort((a, b) => a.item_code - b.item_code));
         setIsEditModalOpen(false);
-      } else {
-        const errorData = await response.json();
-        setEditError(errorData.detail || "Failed to update item.");
-      }
-    } catch (error) {
-      setEditError("Network error. Could not connect to the server.");
-    } finally {
-      setIsEditing(false);
-    }
+      } else setEditError((await response.json()).detail || "Failed to update item.");
+    } catch (error) { setEditError("Network error. Could not connect to the server."); } 
+    finally { setIsEditing(false); }
   };
 
   const handleDeleteItem = async () => {
     setDeleteError('');
     setIsDeleting(true);
     const token = localStorage.getItem("mswil_token");
-
     try {
       const response = await fetch(`http://localhost:8000/inventory/${itemToDelete.item_code}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` }});
       if (response.ok) {
         setInventory((prev) => prev.filter((item) => item.item_code !== itemToDelete.item_code));
         setIsDeleteModalOpen(false);
-      } else {
-        const errorData = await response.json();
-        setDeleteError(errorData.detail || "Failed to delete item.");
-      }
-    } catch (error) {
-      setDeleteError("Network error. Could not connect to the server.");
-    } finally {
-      setIsDeleting(false);
-    }
+      } else setDeleteError((await response.json()).detail || "Failed to delete item.");
+    } catch (error) { setDeleteError("Network error."); } 
+    finally { setIsDeleting(false); }
   };
 
   return (
@@ -589,7 +563,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                         <option value="name">Name / Desc</option>
                       </>
                     )}
-                    {activeTab === 'Customers' && (
+                    {activeTab === 'Manage Customers' && (
                       <>
                         <option value="id">User ID</option>
                         <option value="name">Name</option>
@@ -603,6 +577,12 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                         <option value="org">Organization</option>
                         <option value="name">Customer Name</option>
                         <option value="admin">Invoiced By</option>
+                      </>
+                    )}
+                    {activeTab === 'Activity History' && (
+                      <>
+                        <option value="admin">Admin Name/Email</option>
+                        <option value="entity">Target ID/Type</option>
                       </>
                     )}
                   </select>
@@ -893,8 +873,8 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                 </div>
               )}
 
-              {/* --- CUSTOMERS TAB --- */}
-              {activeTab === 'Customers' && (
+              {/* --- MANAGE CUSTOMERS TAB --- */}
+              {activeTab === 'Manage Customers' && (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                   <div className="px-6 py-4 border-b border-gray-100 bg-white flex flex-col sm:flex-row justify-between items-center gap-4">
                     <h3 className="text-lg font-semibold text-gray-900">Manage Customers</h3>
@@ -991,11 +971,11 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                 </div>
               )}
 
-              {/* --- PURCHASE ORDERS TAB --- */}
+              {/* --- PURCHASE ORDERS TAB (Detailed View) --- */}
               {activeTab === 'Purchase Orders' && (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                   <div className="px-6 py-4 border-b border-gray-100 bg-white flex flex-col sm:flex-row justify-between items-center gap-4">
-                    <h3 className="text-lg font-semibold text-gray-900">Manage Purchase Orders</h3>
+                    <h3 className="text-lg font-semibold text-gray-900">Manage Customer Purchase Orders</h3>
                   </div>
                   {/* Secondary Filter Toolbar */}
                   <div className="px-6 py-3 bg-gray-50/80 border-b border-gray-100 flex flex-wrap items-center justify-between gap-4">
@@ -1124,7 +1104,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                                       onClick={(e) => handleViewDocument(e, po.id, 'invoice')}
                                       className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 px-3 py-1.5 rounded transition inline-flex items-center gap-1 text-xs font-medium"
                                     >
-                                      <DocumentArrowDownIcon className="h-4 w-4" /> Invoice
+                                      <DocumentArrowDownIcon className="h-3.5 w-3.5" /> Invoice
                                     </button>
                                   )}
 
@@ -1138,6 +1118,156 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                   </div>
                 </div>
               )}
+
+              {/* --- ACTIVITY HISTORY TAB (AUDIT LOGS) --- */}
+              {activeTab === 'Activity History' && (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden animate-in fade-in duration-300">
+                  <div className="px-6 py-4 border-b border-gray-100 bg-white flex flex-col sm:flex-row justify-between items-center gap-4">
+                    <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                      <ClipboardDocumentListIcon className="h-5 w-5 text-indigo-600" /> Administrative Audit Trail
+                    </h3>
+                  </div>
+                  
+                  {/* Filter Toolbar for Logs */}
+                  <div className="px-6 py-3 bg-gray-50/80 border-b border-gray-100 flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex flex-wrap items-center gap-5">
+                      <div className="flex items-center gap-3">
+                        <FunnelIcon className="h-4 w-4 text-gray-400" />
+                        <span className="text-sm font-medium text-gray-500">Action:</span>
+                        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="text-sm border border-gray-300 rounded-md py-1.5 pl-3 pr-8 focus:ring-indigo-500 focus:border-indigo-500 text-gray-700 bg-white shadow-sm">
+                          <option value="all">All Actions</option>
+                          <option value="create">CREATE</option>
+                          <option value="update">UPDATE</option>
+                          <option value="delete">DELETE</option>
+                          <option value="approve">APPROVE</option>
+                          <option value="revoke">REVOKE</option>
+                          <option value="invoice">INVOICE</option>
+                        </select>
+                      </div>
+                      
+                      <div className="hidden sm:block h-5 w-px bg-gray-300"></div>
+                      
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-medium text-gray-500">From:</span>
+                        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="text-sm border border-gray-300 rounded-md py-1.5 px-3 focus:ring-indigo-500 focus:border-indigo-500 text-gray-700 bg-white shadow-sm" />
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-medium text-gray-500">To:</span>
+                        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="text-sm border border-gray-300 rounded-md py-1.5 px-3 focus:ring-indigo-500 focus:border-indigo-500 text-gray-700 bg-white shadow-sm" />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      {(statusFilter !== 'all' || startDate || endDate || searchQuery) && (
+                        <button onClick={clearFilters} className="text-sm text-gray-500 hover:text-indigo-700 transition flex items-center gap-1 font-medium mr-2">
+                          <ArrowPathIcon className="h-4 w-4" /> Clear Filters
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50/50">
+                        <tr>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date & Time</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Admin Snapshot</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Action</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Target Entity</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Entity ID</th>
+                          <th className="px-6 py-4 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 bg-white">
+                        {filteredLogs.length === 0 ? (
+                          <tr><td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                            {searchQuery || startDate || endDate || statusFilter !== 'all' ? "No activity logs match your criteria." : "No activity recorded yet."}
+                          </td></tr>
+                        ) : (
+                          filteredLogs.map((log) => {
+                            const isExpanded = expandedLogRow === log.id;
+                            const hasDelta = log.action_type === 'UPDATE' && log.changes && Object.keys(log.changes).length > 0;
+                            
+                            return (
+                              <Fragment key={log.id}>
+                                <tr 
+                                  onClick={() => hasDelta && setExpandedLogRow(isExpanded ? null : log.id)}
+                                  className={classNames("transition-colors", hasDelta ? "hover:bg-indigo-50/50 cursor-pointer" : "", isExpanded ? "bg-indigo-50/30" : "")}
+                                >
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                    <div className="text-sm font-bold text-gray-900">
+                                      {log.timestamp ? new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(log.timestamp)) : '--'}
+                                    </div>
+                                    <div className="text-[10px] text-gray-500 font-medium tracking-wide uppercase mt-0.5">
+                                      {log.timestamp ? new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' }).format(new Date(log.timestamp)) : ''}
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                    <div className="text-sm font-bold text-gray-800">{log.admin_name}</div>
+                                    <div className="text-xs text-gray-500">{log.admin_email}</div>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                    <ActionBadge action={log.action_type} />
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-700">
+                                    {log.entity_type}
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                    <div className="text-sm font-bold text-indigo-600">#{log.entity_id}</div>
+                                    {hasDelta && (
+                                      <div className="text-[10px] text-gray-400 font-medium mt-0.5 flex items-center gap-1">
+                                        Click row to view changes
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap flex justify-center">
+                                    <button 
+                                      onClick={(e) => handleLogDetailsNavigation(e, log)}
+                                      className="text-xs bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-3 py-1.5 rounded font-bold transition shadow-sm border border-indigo-200 inline-flex items-center gap-1"
+                                    >
+                                      <EyeIcon className="h-4 w-4" /> View Details
+                                    </button>
+                                  </td>
+                                </tr>
+                                
+                                {/* THE DELTA JSON DROPDOWN */}
+                                {isExpanded && hasDelta && (
+                                  <tr className="bg-gray-50/50 border-b border-gray-100">
+                                    <td colSpan={6} className="px-6 py-6">
+                                      <div className="max-w-3xl border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
+                                        <div className="bg-gray-100 px-4 py-2 border-b border-gray-200 text-xs font-bold text-gray-600 uppercase tracking-wider">
+                                          Data Modifications (Delta)
+                                        </div>
+                                        <div className="divide-y divide-gray-100">
+                                          {Object.entries(log.changes).map(([field, vals]: [string, any]) => (
+                                            <div key={field} className="px-4 py-3 flex items-center gap-6">
+                                              <div className="w-1/4 text-sm font-semibold text-gray-700 capitalize">{field.replace('_', ' ')}</div>
+                                              <div className="w-3/4 flex items-center gap-4 text-sm">
+                                                <span className="px-3 py-1 bg-red-50 text-red-700 rounded border border-red-100 line-through decoration-red-300">
+                                                  {String(vals.old || 'Null')}
+                                                </span>
+                                                <span className="text-gray-400">➔</span>
+                                                <span className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded border border-emerald-100 font-medium">
+                                                  {String(vals.new || 'Null')}
+                                                </span>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </Fragment>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
             </>
           )}
         </div>
@@ -1306,7 +1436,9 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                       Revoke Customer Access
                     </DialogTitle>
                     <div className="mt-2 text-sm text-gray-600">
-                      <p>Are you sure you want to temporarily suspend <strong className="text-gray-900">{customerToRevoke.name}</strong> ({customerToRevoke.organization})?</p>
+                      <p>Are you sure you want to temporarily suspend <strong className="text-gray-900">{customerToRevoke.name}</strong>?</p>
+                      <p><strong className="text-gray-900">Customer Details:</strong> <br />Organization: <strong className="text-gray-900">{customerToRevoke.organization}</strong> <br />
+                      Email: <strong className="text-gray-900">{customerToRevoke.email}</strong> &bull; Login: <strong className="text-gray-900">{customerToRevoke.username}</strong></p>
                       <p className="mt-2 text-orange-600 font-medium">This will immediately block their ability to log in and submit purchase orders. You can re-approve them at any time.</p>
                     </div>
                   </div>
@@ -1339,6 +1471,8 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                     </DialogTitle>
                     <div className="mt-2 text-sm text-gray-600">
                       <p>Are you sure you want to permanently delete <strong className="text-gray-900">{customerToDelete.name}</strong>?</p>
+                      <p><strong className="text-gray-900">Customer Details:</strong> <br />Organization: <strong className="text-gray-900">{customerToDelete.organization}</strong> <br />
+                      Email: <strong className="text-gray-900">{customerToDelete.email}</strong> &bull; Login: <strong className="text-gray-900">{customerToDelete.username}</strong></p>
                       <p className="mt-2 text-red-600 font-medium">This action cannot be undone. If this customer has existing Purchase Orders, you must use "Revoke" instead to preserve the database integrity.</p>
                     </div>
                     {deleteCustomerError && <div className="mt-4 p-3 bg-red-50 text-red-600 text-sm font-medium rounded-md border border-red-200">{deleteCustomerError}</div>}

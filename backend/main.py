@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, BackgroundTasks
 from sqlalchemy.orm import Session
 import models
 import schemas
@@ -8,7 +8,8 @@ from typing import Optional
 from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
-import pdf_utils as pdf_utils
+import pdf_utils
+import logger_utils
 import os
 
 models.Base.metadata.create_all(bind=engine)
@@ -100,7 +101,12 @@ def register_user(request: schemas.UserRegistrationRequest, db: Session = Depend
     }
 
 @app.put("/admin/approve-user/{user_id}")
-def approve_user(user_id: int, db: Session = Depends(get_db), admin_user: models.User = Depends(auth_utils.get_current_admin)):
+def approve_user(
+    user_id: int,
+    background_tasks: BackgroundTasks, 
+    db: Session = Depends(get_db), 
+    admin_user: models.User = Depends(auth_utils.get_current_admin)
+):
     """Endpoint for an admin to approve a new user account."""
     
     # Search the database for the user by their ID
@@ -121,6 +127,8 @@ def approve_user(user_id: int, db: Session = Depends(get_db), admin_user: models
     
     # Trigger the utility function to simulate sending the welcome email
     auth_utils.send_approval_email(user.email, user.username)
+
+    background_tasks.add_task(logger_utils.log_admin_activity, db, admin_user, "APPROVE", "User", user_id)
     
     return {"message": f"User '{user.username}' has been approved and notified."}
 
@@ -147,17 +155,29 @@ def get_all_customers(
     return result
 
 @app.put("/admin/revoke-user/{user_id}")
-def revoke_user(user_id: int, db: Session = Depends(get_db), admin_user: models.User = Depends(auth_utils.get_current_admin)):
+def revoke_user(
+    user_id: int, 
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db), 
+    admin_user: models.User = Depends(auth_utils.get_current_admin)
+):
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user: raise HTTPException(status_code=404, detail="User not found")
     if user.role == "admin": raise HTTPException(status_code=403, detail="Admins cannot revoke other admins.")
         
     user.is_approved = False
     db.commit()
+
+    background_tasks.add_task(logger_utils.log_admin_activity, db, admin_user, "REVOKE", "User", user_id)
     return {"message": "User access has been revoked successfully."}
 
 @app.delete("/admin/users/{user_id}")
-def delete_user(user_id: int, db: Session = Depends(get_db), admin_user: models.User = Depends(auth_utils.get_current_admin)):
+def delete_user(
+    user_id: int, 
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db), 
+    admin_user: models.User = Depends(auth_utils.get_current_admin)
+):
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user: raise HTTPException(status_code=404, detail="User not found")
     if user.role == "admin": raise HTTPException(status_code=403, detail="Security protocol: Admins cannot delete other admins.")
@@ -165,6 +185,7 @@ def delete_user(user_id: int, db: Session = Depends(get_db), admin_user: models.
     try:
         db.delete(user)
         db.commit()
+        background_tasks.add_task(logger_utils.log_admin_activity, db, admin_user, "DELETE", "User", user_id)
         return {"message": f"User {user.username} deleted successfully."}
     except Exception as e:
         db.rollback()
@@ -173,6 +194,7 @@ def delete_user(user_id: int, db: Session = Depends(get_db), admin_user: models.
 @app.post("/inventory", response_model=schemas.InventoryItemResponse)
 def add_inventory_item(
     item: schemas.InventoryItemCreate, 
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     admin_user: models.User = Depends(auth_utils.get_current_admin)
 ):
@@ -201,6 +223,11 @@ def add_inventory_item(
     db.add(new_item)
     db.commit()
     db.refresh(new_item)
+
+    background_tasks.add(
+        logger_utils.log_admin_activity, 
+        db, admin_user, "CREATE", "InventoryItem", new_item.item_code
+    )
     
     return new_item
 
@@ -237,6 +264,7 @@ def get_all_inventory(
 def update_inventory_item(
     item_code: int, 
     update_data: schemas.InventoryItemUpdate, 
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     admin_user: models.User = Depends(auth_utils.get_current_admin)
 ):
@@ -245,6 +273,9 @@ def update_inventory_item(
     db_item = db.query(models.InventoryItem).filter(models.InventoryItem.item_code == item_code).first()
     if not db_item:
         raise HTTPException(status_code=404, detail="Item not found in inventory.")
+
+    # Capture old state for logging
+    old_data = db_item.__dict__.copy()
     
     update_dict = update_data.model_dump(exclude_unset=True)
     
@@ -253,12 +284,24 @@ def update_inventory_item(
         
     db.commit()
     db.refresh(db_item)
+
+    # Capture new state and generate the delta for logging
+    new_data = db_item.__dict__.copy()
+    changes = logger_utils.generate_delta(old_data, new_data)
+
+    # --- PERFORM BACKGROUND LOG (Only if something actually changed) ---
+    if changes:
+        background_tasks.add_task(
+            logger_utils.log_admin_activity, 
+            db, admin_user, "UPDATE", "InventoryItem", item_code, changes
+        )
     
     return db_item
 
 @app.delete("/inventory/{item_code}")
 def delete_inventory_item(
-    item_code: int, 
+    item_code: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     admin_user: models.User = Depends(auth_utils.get_current_admin)
 ):
@@ -274,12 +317,19 @@ def delete_inventory_item(
     # Delete the object and save the change
     db.delete(db_item)
     db.commit()
+
+    # Log the deletion activity
+    background_tasks.add_task(
+        logger_utils.log_admin_activity, 
+        db, admin_user, "DELETE", "InventoryItem", item_code
+    )
     
     return {"message": f"Item code {item_code} has been successfully deleted from inventory."}
 
 @app.put("/admin/purchase-orders/{po_id}/invoice", response_model=schemas.PurchaseOrderResponse)
 def admin_generate_invoice(
     po_id: int, 
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     admin_user: models.User = Depends(auth_utils.get_current_admin)
 ):
@@ -335,8 +385,23 @@ def admin_generate_invoice(
     po.invoiced_by_id = admin_user.id
     db.commit()
     db.refresh(po)
+
+    background_tasks.add_task(
+        logger_utils.log_admin_activity, 
+        db, admin_user, "INVOICE", "PurchaseOrder", po.id
+    )
     
     return po
+
+@app.get("/admin/activity-logs")
+def get_activity_logs(
+    db: Session = Depends(get_db), 
+    admin_user: models.User = Depends(auth_utils.get_current_admin)
+):
+    """Admin workflow: Fetch the immutable audit trail."""
+    # Fetch all logs, newest first
+    logs = db.query(models.AdminActivityLog).order_by(models.AdminActivityLog.timestamp.desc()).all()
+    return logs
 
 @app.post("/purchase-order", response_model=schemas.PurchaseOrderResponse)
 def create_purchase_order(

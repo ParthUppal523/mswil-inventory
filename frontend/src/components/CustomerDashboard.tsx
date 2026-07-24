@@ -114,14 +114,14 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
   }, []);
 
   // ==========================================
-  // ENTERPRISE SEARCH & FILTER ENGINE
+  // SEARCH & FILTER ENGINE
   // ==========================================
   const applyPOFilters = (poList: any[]) => {
     let result = poList.filter((po) => {
-      // 1. Status Filter
+      // Status Filter
       if (statusFilter !== 'all' && po.status?.toLowerCase() !== statusFilter.toLowerCase()) return false;
 
-      // 2. Text Search Filter
+      // Text Search Filter
       const q = searchQuery.toLowerCase().trim().replace('#', '');
       let matchesSearch = true;
 
@@ -137,7 +137,7 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
         }
       }
 
-      // 3. Date Filter
+      // Date Filter
       let matchesDate = true;
       if (po.created_at && (startDate || endDate)) {
         const poDate = new Date(po.created_at).toISOString().split('T')[0];
@@ -148,7 +148,7 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
       return matchesSearch && matchesDate;
     });
 
-    // 4. Apply Sort to POs (By Value instead of Org, since Org is always the same for the customer)
+    // Apply Sort to POs by total value
     if (sortConfig === 'val_desc') {
       result.sort((a, b) => (b.total_amount || 0) - (a.total_amount || 0));
     } else if (sortConfig === 'val_asc') {
@@ -161,7 +161,7 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
 
   const filteredPOs = applyPOFilters(purchaseOrders);
 
-  // --- SECURE PDF DOCUMENT VIEWER ---
+  // --- PDF DOCUMENT VIEWER ---
   const handleViewDocument = async (e: React.MouseEvent, poId: number, docType: 'po' | 'invoice') => {
     e.stopPropagation(); // Prevents the row from expanding when clicking the button
     const token = localStorage.getItem("mswil_token");
@@ -178,7 +178,7 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
         const blob = await response.blob();
         // Create a temporary local URL for the Blob
         const url = window.URL.createObjectURL(blob);
-        // Open the secure URL in a new tab
+        // Open the URL in a new tab
         window.open(url, '_blank');
         
         // Clean up the temporary URL memory
@@ -378,7 +378,7 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
             <h1 className="text-3xl font-bold tracking-tight text-white">{activeTab}</h1>
             
-            {/* THE COMPOSITE SEARCH BAR - Only Visible on Order History */}
+            {/* THE COMPOSITE SEARCH BAR - Only Visible for Order History Tab */}
             {activeTab === 'Order History' && (
               <div className="w-full lg:w-auto">
                 <div className="flex rounded-md shadow-sm w-full lg:min-w-[500px]">
@@ -858,12 +858,6 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
                                   <div className="text-[10px] text-gray-400 font-normal mt-0.5">
                                     {isPOInvoiced ? 'Incl. of GST (18%)' : 'Excl. of GST'}
                                   </div>
-                                  {/* THE INVOICE TRACKER DISPLAY
-                                  {isPOInvoiced && po.invoiced_by_name && (
-                                    <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">
-                                      Invoiced by {po.invoiced_by_name}
-                                    </div>
-                                  )} */}
                                 </td>
                                 <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-[200px]" : "truncate max-w-[150px]")}>
                                   {po.shipping_address || '--'}

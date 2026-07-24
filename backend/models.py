@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Float, Text, Boolean, DateTime, func
+from sqlalchemy import Column, Integer, String, ForeignKey, Float, Text, Boolean, DateTime, JSON, func
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -89,3 +89,23 @@ class PurchaseOrderItem(Base):
     item_code = Column(Integer, ForeignKey("inventory_items.item_code"))
     ordered_quantity = Column(Integer)
     unit_price = Column(Float)
+
+# 6. ADMIN ACTIVITY LOGS
+class AdminActivityLog(Base):
+    __tablename__ = "admin_activity_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Snapshot (Stored permanently even if admin is deleted)
+    admin_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    admin_name = Column(String, nullable=False)
+    admin_email = Column(String, nullable=False)
+    
+    # Event Routing
+    action_type = Column(String, nullable=False) # e.g., "UPDATE", "DELETE", "APPROVE", "INVOICE"
+    entity_type = Column(String, nullable=False) # e.g., "InventoryItem", "User", "PurchaseOrder"
+    entity_id = Column(String, nullable=False)   # ID or Item Code of the modified object
+    
+    # The Delta Payload
+    changes = Column(JSON, nullable=True)        # Will store {"price": {"old": 100, "new": 120}}
