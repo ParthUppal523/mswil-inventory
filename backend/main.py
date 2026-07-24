@@ -453,19 +453,47 @@ def get_purchase_orders(
     
     if current_user.role == "admin":
         # Admins can see all POs
-        pos = db.query(models.PurchaseOrder).all()
+        pos = db.query(models.PurchaseOrder).order_by(models.PurchaseOrder.id.desc()).all()
     else:
         # Customers can only see their own POs
-        pos = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.customer_id == current_user.id).all()
-        
-    for po in pos:
-        customer = db.query(models.User).filter(models.User.id == po.customer_id).first()
-        if customer:
-            po.customer_name = f"{customer.first_name} {customer.last_name}".strip() or customer.username
-            profile = db.query(models.CustomerProfile).filter(models.CustomerProfile.user_id == customer.id).first()
-            po.organization_name = profile.organization_name if profile else "N/A"
+        pos = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.customer_id == current_user.id).order_by(models.PurchaseOrder.id.desc()).all()
 
-    return pos
+    result = []
+    
+    for po in pos:
+        # 1. Fetch Customer Info
+        customer = db.query(models.User).filter(models.User.id == po.customer_id).first()
+        customer_name = None
+        org_name = "Individual Customer"
+        
+        if customer:
+            customer_name = f"{customer.first_name} {customer.last_name}".strip() or customer.username
+            profile = db.query(models.CustomerProfile).filter(models.CustomerProfile.user_id == customer.id).first()
+            if profile and profile.organization_name:
+                org_name = profile.organization_name
+                
+        # 2. Fetch Admin Info (if invoiced)
+        admin_name = None
+        if po.invoiced_by_id:
+            admin_user = db.query(models.User).filter(models.User.id == po.invoiced_by_id).first()
+            if admin_user:
+                admin_name = f"{admin_user.first_name} {admin_user.last_name}".strip() or admin_user.username
+                
+        result.append({
+            "id": po.id,
+            "customer_id": po.customer_id,
+            "status": po.status,
+            "total_amount": po.total_amount,
+            "created_at": po.created_at,
+            "shipping_address": po.shipping_address,
+            "billing_address": po.billing_address,
+            "invoiced_by_id": po.invoiced_by_id,
+            "customer_name": customer_name,
+            "organization_name": org_name,
+            "invoiced_by_name": admin_name
+        })
+                
+    return result
 
 @app.get("/purchase-orders/{po_id}/download")
 def download_document(

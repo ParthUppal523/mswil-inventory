@@ -243,7 +243,7 @@ export default function Login() {
               <button
                 type="submit"
                 disabled={isRegistering}
-                className="w-full py-3 mt-4 bg-emerald-800 hover:bg-emerald-600 text-white font-bold rounded-lg transition-colors shadow-md disabled:opacity-70"
+                className="w-full py-3 mt-4 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg transition-colors shadow-md disabled:opacity-70"
               >
                 {isRegistering ? 'Submitting...' : 'Submit Registration'}
               </button>

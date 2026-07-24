@@ -82,6 +82,8 @@ class PurchaseOrderResponse(PurchaseOrderBase):
     created_at: datetime
     customer_name: Optional[str] = None
     organization_name: Optional[str] = None
+    invoiced_by_id: Optional[int] = None 
+    invoiced_by_name: Optional[str] = None
 
     class Config:
         from_attributes = True

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Disclosure, DisclosureButton, DisclosurePanel, Menu, MenuButton, MenuItem, MenuItems, Listbox, ListboxButton, ListboxOption, ListboxOptions } from '@headlessui/react';
-import { Bars3Icon, BellIcon, XMarkIcon, MagnifyingGlassIcon, DocumentTextIcon, DocumentArrowDownIcon, TrashIcon, PlusIcon, ChevronUpDownIcon } from '@heroicons/react/24/outline';
+import { Bars3Icon, BellIcon, XMarkIcon, MagnifyingGlassIcon, DocumentTextIcon, DocumentArrowDownIcon, TrashIcon, PlusIcon, ChevronUpDownIcon, FunnelIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 
 const userNavigation = [
   { name: 'Your profile', href: '#' },
@@ -33,6 +33,14 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
   const [inventoryList, setInventoryList] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
   
+  // --- GLOBAL SEARCH & ADVANCED FILTER STATES ---
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchScope, setSearchScope] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [sortConfig, setSortConfig] = useState('default');
+
   // State for Expandable Rows
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
 
@@ -54,6 +62,25 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
     { name: 'Submit PO' },
     { name: 'Order History' },
   ];
+
+  // Reset Filters when switching tabs
+  useEffect(() => {
+    setSearchQuery('');
+    setSearchScope('all');
+    setStatusFilter('all');
+    setStartDate('');
+    setEndDate('');
+    setSortConfig('default');
+  }, [activeTab]);
+
+  const clearFilters = () => {
+    setSearchQuery('');
+    setSearchScope('all');
+    setStatusFilter('all');
+    setStartDate('');
+    setEndDate('');
+    setSortConfig('default');
+  };
 
   // --- DATA FETCHING ---
   const fetchCustomerData = async () => {
@@ -85,6 +112,54 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
   useEffect(() => {
     fetchCustomerData();
   }, []);
+
+  // ==========================================
+  // ENTERPRISE SEARCH & FILTER ENGINE
+  // ==========================================
+  const applyPOFilters = (poList: any[]) => {
+    let result = poList.filter((po) => {
+      // 1. Status Filter
+      if (statusFilter !== 'all' && po.status?.toLowerCase() !== statusFilter.toLowerCase()) return false;
+
+      // 2. Text Search Filter
+      const q = searchQuery.toLowerCase().trim().replace('#', '');
+      let matchesSearch = true;
+
+      if (q) {
+        if (searchScope === 'id') matchesSearch = po.id?.toString() === q;
+        else {
+          matchesSearch = (
+            po.id?.toString() === q ||
+            po.status?.toLowerCase().includes(q) ||
+            po.shipping_address?.toLowerCase().includes(q) ||
+            po.billing_address?.toLowerCase().includes(q)
+          );
+        }
+      }
+
+      // 3. Date Filter
+      let matchesDate = true;
+      if (po.created_at && (startDate || endDate)) {
+        const poDate = new Date(po.created_at).toISOString().split('T')[0];
+        if (startDate) matchesDate = matchesDate && (poDate >= startDate);
+        if (endDate) matchesDate = matchesDate && (poDate <= endDate);
+      }
+
+      return matchesSearch && matchesDate;
+    });
+
+    // 4. Apply Sort to POs (By Value instead of Org, since Org is always the same for the customer)
+    if (sortConfig === 'val_desc') {
+      result.sort((a, b) => (b.total_amount || 0) - (a.total_amount || 0));
+    } else if (sortConfig === 'val_asc') {
+      result.sort((a, b) => (a.total_amount || 0) - (b.total_amount || 0));
+    }
+    // "default" keeps the initial Newest First sort
+    
+    return result;
+  };
+
+  const filteredPOs = applyPOFilters(purchaseOrders);
 
   // --- SECURE PDF DOCUMENT VIEWER ---
   const handleViewDocument = async (e: React.MouseEvent, poId: number, docType: 'po' | 'invoice') => {
@@ -238,7 +313,7 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
   return (
     <div className="min-h-screen bg-gray-50">
       
-      {/* EMERALD OVERLAPPING HEADER */}
+      {/* THE EMERALD OVERLAPPING HEADER */}
       <div className="bg-emerald-700 pb-32">
         <Disclosure as="nav" className="border-b border-emerald-600/50 bg-emerald-700">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -300,16 +375,35 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
         </Disclosure>
 
         <header className="py-10">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-4">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
             <h1 className="text-3xl font-bold tracking-tight text-white">{activeTab}</h1>
-            <div className="relative w-full sm:w-80">
-              <MagnifyingGlassIcon className="absolute left-3 top-2.5 h-5 w-5 text-emerald-300" />
-              <input
-                type="text"
-                placeholder="Search orders..."
-                className="w-full bg-emerald-600/50 border border-transparent text-white placeholder-emerald-200 rounded-md py-2 pl-10 pr-3 focus:outline-none focus:bg-white focus:text-gray-900 focus:placeholder-gray-500 transition-colors sm:text-sm"
-              />
-            </div>
+            
+            {/* THE COMPOSITE SEARCH BAR - Only Visible on Order History */}
+            {activeTab === 'Order History' && (
+              <div className="w-full lg:w-auto">
+                <div className="flex rounded-md shadow-sm w-full lg:min-w-[500px]">
+                  <select
+                    value={searchScope}
+                    onChange={(e) => setSearchScope(e.target.value)}
+                    className="bg-emerald-800 text-emerald-100 border-r border-emerald-600/50 rounded-l-md px-3 py-2 text-sm focus:outline-none focus:bg-emerald-900 transition-colors font-medium cursor-pointer"
+                  >
+                    <option value="all">All Fields</option>
+                    <option value="id">PO ID</option>
+                  </select>
+                  
+                  <div className="relative flex-grow">
+                    <MagnifyingGlassIcon className="absolute left-3 top-2.5 h-5 w-5 text-emerald-300 hidden sm:block" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search your orders..."
+                      className="w-full bg-emerald-600/40 border border-transparent text-white placeholder-emerald-200 py-2 pr-3 focus:outline-none focus:bg-emerald-600 focus:ring-2 focus:ring-emerald-300 transition-colors sm:text-sm rounded-r-md pl-3 sm:pl-10"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </header>
       </div>
@@ -354,6 +448,8 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
                         ) : (
                           purchaseOrders.slice(0, 5).map((po) => {
                             const isExpanded = expandedRow === po.id;
+                            const isPOInvoiced = po.status === 'Invoiced';
+                            const displayTotal = isPOInvoiced ? po.total_amount * 1.18 : po.total_amount;
                             
                             return (
                               <tr 
@@ -365,13 +461,18 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
                                   {po.created_at ? new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(po.created_at)) : '--'}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">#{po.id}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                  {po.total_amount ? `₹${po.total_amount.toFixed(2)}` : '₹ --'}
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                  <div className="text-sm font-semibold text-gray-900">
+                                    {po.total_amount ? `₹${displayTotal.toFixed(2)}` : '₹ --'}
+                                  </div>
+                                  <div className="text-[10px] text-gray-400 font-normal mt-0.5">
+                                    {isPOInvoiced ? 'Incl. of GST (18%)' : 'Excl. of GST'}
+                                  </div>
                                 </td>
-                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-50" : "truncate max-w-37.5")}>
+                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-[200px]" : "truncate max-w-[150px]")}>
                                   {po.shipping_address || '--'}
                                 </td>
-                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-50" : "truncate max-w-37.5")}>
+                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-[200px]" : "truncate max-w-[150px]")}>
                                   {po.billing_address || '--'}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap">
@@ -666,12 +767,56 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
                 </div>
               )}
 
-              {/* --- ORDER HISTORY TAB --- */}
+              {/* --- ORDER HISTORY TAB (Detailed View) --- */}
               {activeTab === 'Order History' && (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                  <div className="px-6 py-5 border-b border-gray-100 flex justify-between items-center bg-white">
+                  <div className="px-6 py-4 border-b border-gray-100 bg-white flex flex-col sm:flex-row justify-between items-center gap-4">
                     <h3 className="text-lg font-semibold text-gray-900">Complete Order History</h3>
                   </div>
+                  
+                  {/* Secondary Filter Toolbar */}
+                  <div className="px-6 py-3 bg-gray-50/80 border-b border-gray-100 flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex flex-wrap items-center gap-5">
+                      <div className="flex items-center gap-3">
+                        <FunnelIcon className="h-4 w-4 text-gray-400" />
+                        <span className="text-sm font-medium text-gray-500">Status:</span>
+                        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="text-sm border border-gray-300 rounded-md py-1.5 pl-3 pr-8 focus:ring-emerald-500 focus:border-emerald-500 text-gray-700 bg-white shadow-sm">
+                          <option value="all">All Orders</option>
+                          <option value="pending">Pending</option>
+                          <option value="approved">Approved</option>
+                          <option value="invoiced">Invoiced</option>
+                          <option value="backordered">Backordered</option>
+                        </select>
+                      </div>
+                      
+                      <div className="hidden sm:block h-5 w-px bg-gray-300"></div>
+                      
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-medium text-gray-500">From:</span>
+                        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="text-sm border border-gray-300 rounded-md py-1.5 px-3 focus:ring-emerald-500 focus:border-emerald-500 text-gray-700 bg-white shadow-sm" />
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-medium text-gray-500">To:</span>
+                        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="text-sm border border-gray-300 rounded-md py-1.5 px-3 focus:ring-emerald-500 focus:border-emerald-500 text-gray-700 bg-white shadow-sm" />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <button 
+                        onClick={clearFilters}
+                        className="text-sm text-gray-500 hover:text-emerald-700 transition flex items-center gap-1 font-medium mr-2"
+                      >
+                        <ArrowPathIcon className="h-4 w-4" /> Clear
+                      </button>
+                      <span className="text-sm font-medium text-gray-500">Sort By:</span>
+                      <select value={sortConfig} onChange={(e) => setSortConfig(e.target.value)} className="text-sm border border-gray-300 rounded-md py-1.5 pl-3 pr-8 focus:ring-emerald-500 focus:border-emerald-500 text-gray-700 bg-white shadow-sm">
+                        <option value="default">Default (Newest)</option>
+                        <option value="val_desc">Total Value (High to Low)</option>
+                        <option value="val_asc">Total Value (Low to High)</option>
+                      </select>
+                    </div>
+                  </div>
+
                   <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
                       <thead className="bg-gray-50/50">
@@ -686,11 +831,15 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100 bg-white">
-                        {purchaseOrders.length === 0 ? (
-                          <tr><td colSpan={7} className="px-6 py-12 text-center text-gray-500">No order history available.</td></tr>
+                        {filteredPOs.length === 0 ? (
+                          <tr><td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                            {searchQuery || startDate || endDate || statusFilter !== 'all' ? "No purchase orders match your criteria." : "No purchase orders recorded yet."}
+                          </td></tr>
                         ) : (
-                          purchaseOrders.map((po) => {
+                          filteredPOs.map((po) => {
                             const isExpanded = expandedRow === po.id;
+                            const isPOInvoiced = po.status === 'Invoiced';
+                            const displayTotal = isPOInvoiced ? po.total_amount * 1.18 : po.total_amount;
                             
                             return (
                               <tr 
@@ -702,13 +851,24 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
                                   {po.created_at ? new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(po.created_at)) : '--'}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">#{po.id}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                  {po.total_amount ? `₹${po.total_amount.toFixed(2)}` : '₹ --'}
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                  <div className="text-sm font-semibold text-gray-900">
+                                    {po.total_amount ? `₹${displayTotal.toFixed(2)}` : '₹ --'}
+                                  </div>
+                                  <div className="text-[10px] text-gray-400 font-normal mt-0.5">
+                                    {isPOInvoiced ? 'Incl. of GST (18%)' : 'Excl. of GST'}
+                                  </div>
+                                  {/* THE INVOICE TRACKER DISPLAY
+                                  {isPOInvoiced && po.invoiced_by_name && (
+                                    <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">
+                                      Invoiced by {po.invoiced_by_name}
+                                    </div>
+                                  )} */}
                                 </td>
-                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-50" : "truncate max-w-37.5")}>
+                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-[200px]" : "truncate max-w-[150px]")}>
                                   {po.shipping_address || '--'}
                                 </td>
-                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-50" : "truncate max-w-37.5")}>
+                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-[200px]" : "truncate max-w-[150px]")}>
                                   {po.billing_address || '--'}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap">
