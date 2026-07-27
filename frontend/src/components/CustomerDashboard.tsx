@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
-import { Disclosure, DisclosureButton, DisclosurePanel, Menu, MenuButton, MenuItem, MenuItems, Listbox, ListboxButton, ListboxOption, ListboxOptions } from '@headlessui/react';
-import { Bars3Icon, BellIcon, XMarkIcon, MagnifyingGlassIcon, DocumentTextIcon, DocumentArrowDownIcon, TrashIcon, PlusIcon, ChevronUpDownIcon, FunnelIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import React, { useState, useEffect, useRef, Fragment } from 'react';
+import { Disclosure, DisclosureButton, DisclosurePanel, Menu, MenuButton, MenuItem, MenuItems, Listbox, ListboxButton, ListboxOption, ListboxOptions, Dialog, DialogPanel, DialogTitle, DialogBackdrop } from '@headlessui/react';
+import { Bars3Icon, BellIcon, XMarkIcon, MagnifyingGlassIcon, DocumentTextIcon, DocumentArrowDownIcon, TrashIcon, PlusIcon, ChevronUpDownIcon, FunnelIcon, ArrowPathIcon, EyeIcon } from '@heroicons/react/24/outline';
 
 const userNavigation = [
   { name: 'Your profile', href: '#' },
@@ -17,11 +17,12 @@ const StatusBadge = ({ status }: { status: string }) => {
   let colorClass = 'bg-gray-100 text-gray-800 border-gray-200';
   if (status === 'Approved') colorClass = 'bg-emerald-100 text-emerald-800 border-emerald-200';
   else if (status === 'Invoiced') colorClass = 'bg-indigo-100 text-indigo-800 border-indigo-200';
-  else if (status === 'Backordered') colorClass = 'bg-orange-100 text-orange-800 border-orange-200';
+  else if (status === 'Backordered' || status === 'Pending' || status === 'Unread') colorClass = 'bg-orange-100 text-orange-800 border-orange-200';
+  else if (status === 'Read') colorClass = 'bg-gray-100 text-gray-600 border-gray-200';
 
   return (
     <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium border ${colorClass}`}>
-      {status || 'Pending'}
+      {status || 'Unknown'}
     </span>
   );
 };
@@ -41,6 +42,9 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
   const [endDate, setEndDate] = useState('');
   const [sortConfig, setSortConfig] = useState('default');
 
+  // Deep Link Ref to prevent useEffect from wiping search instantly
+  const isDeepLink = useRef(false);
+
   // State for Expandable Rows
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
 
@@ -57,14 +61,23 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
   const [isSubmittingPO, setIsSubmittingPO] = useState(false);
   const [poSubmitError, setPoSubmitError] = useState('');
 
+  // --- NOTIFICATION STATES ---
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const unreadCount = notifications.filter(n => !n.is_read).length;
+
   const navigation = [
     { name: 'Dashboard' },
     { name: 'Submit PO' },
     { name: 'Order History' },
+    { name: 'Notifications' },
   ];
 
   // Reset Filters when switching tabs
   useEffect(() => {
+    if (isDeepLink.current) {
+      isDeepLink.current = false;
+      return;
+    }
     setSearchQuery('');
     setSearchScope('all');
     setStatusFilter('all');
@@ -88,30 +101,80 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
     if (!token) return;
 
     try {
-      const poRes = await fetch("http://localhost:8000/purchase-orders", {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (poRes.ok) {
-        const poData = await poRes.json();
-        setPurchaseOrders(poData.sort((a: any, b: any) => b.id - a.id));
-      }
+      const poRes = await fetch("http://localhost:8000/purchase-orders", { headers: { Authorization: `Bearer ${token}` } });
+      if (poRes.ok) setPurchaseOrders((await poRes.json()).sort((a: any, b: any) => b.id - a.id));
 
-      const invRes = await fetch("http://localhost:8000/inventory", {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (invRes.ok) {
-        setInventoryList(await invRes.json());
+      const invRes = await fetch("http://localhost:8000/inventory", { headers: { Authorization: `Bearer ${token}` } });
+      if (invRes.ok) setInventoryList(await invRes.json());
+    } catch (error) { console.error("Failed to fetch customer data:", error); } 
+    finally { setLoading(false); }
+  };
+
+  const fetchNotifications = async () => {
+    const token = localStorage.getItem("mswil_token");
+    if (!token) return;
+    try {
+      const res = await fetch("http://localhost:8000/notifications", { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) setNotifications(await res.json());
+    } catch (error) { console.error("Failed to fetch notifications:", error); }
+  };
+
+  // Initial fetch and 30-second polling for alerts
+  useEffect(() => {
+    fetchCustomerData();
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+
+  // --- NOTIFICATION HANDLERS ---
+  const handleNotificationClick = async (e: React.MouseEvent, notif: any, directRoute: boolean = true) => {
+    e.stopPropagation();
+    const token = localStorage.getItem("mswil_token");
+    
+    // Mark as read
+    if (!notif.is_read && token) {
+      try {
+        await fetch(`http://localhost:8000/notifications/${notif.id}/read`, {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
+      } catch (error) { console.error("Failed to mark notification read:", error); }
+    }
+
+    // Deep Link Routing
+    if (directRoute) {
+      isDeepLink.current = true;
+      setStatusFilter('all');
+      setStartDate('');
+      setEndDate('');
+      setSortConfig('default');
+
+      // Regex to extract PO ID from string (e.g. "Purchase Order #5")
+      const idMatch = notif.message.match(/#(\d+)/);
+      const extractedId = idMatch ? idMatch[1] : '';
+
+      if (notif.title.toLowerCase().includes("purchase order") || notif.title.toLowerCase().includes("invoice")) {
+        setActiveTab("Order History");
+        if (extractedId) {
+          setSearchQuery(extractedId);
+          setSearchScope('id');
+        }
       }
-    } catch (error) {
-      console.error("Failed to fetch customer data:", error);
-    } finally {
-      setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchCustomerData();
-  }, []);
+  const handleMarkAllAsRead = async () => {
+    const token = localStorage.getItem("mswil_token");
+    if (!token) return;
+    try {
+      await fetch("http://localhost:8000/notifications/read-all", { method: "PUT", headers: { Authorization: `Bearer ${token}` } });
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    } catch (error) { console.error("Failed to mark all as read:", error); }
+  };
+
 
   // ==========================================
   // SEARCH & FILTER ENGINE
@@ -127,50 +190,48 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
 
       if (q) {
         if (searchScope === 'id') matchesSearch = po.id?.toString() === q;
-        else {
-          matchesSearch = (
-            po.id?.toString() === q ||
-            po.status?.toLowerCase().includes(q) ||
-            po.shipping_address?.toLowerCase().includes(q) ||
-            po.billing_address?.toLowerCase().includes(q)
-          );
-        }
+        else matchesSearch = (po.id?.toString() === q || po.status?.toLowerCase().includes(q) || po.shipping_address?.toLowerCase().includes(q) || po.billing_address?.toLowerCase().includes(q));
       }
 
-      // Date Filter
       let matchesDate = true;
       if (po.created_at && (startDate || endDate)) {
         const poDate = new Date(po.created_at).toISOString().split('T')[0];
         if (startDate) matchesDate = matchesDate && (poDate >= startDate);
         if (endDate) matchesDate = matchesDate && (poDate <= endDate);
       }
-
       return matchesSearch && matchesDate;
     });
 
-    // Apply Sort to POs by total value
-    if (sortConfig === 'val_desc') {
-      result.sort((a, b) => (b.total_amount || 0) - (a.total_amount || 0));
-    } else if (sortConfig === 'val_asc') {
-      result.sort((a, b) => (a.total_amount || 0) - (b.total_amount || 0));
-    }
-    // "default" keeps the initial Newest First sort
+    if (sortConfig === 'val_desc') result.sort((a, b) => (b.total_amount || 0) - (a.total_amount || 0));
+    else if (sortConfig === 'val_asc') result.sort((a, b) => (a.total_amount || 0) - (b.total_amount || 0));
     
     return result;
   };
 
   const filteredPOs = applyPOFilters(purchaseOrders);
 
+  const filteredNotifications = notifications.filter((notif) => {
+    if (statusFilter === 'unread' && notif.is_read) return false;
+    if (statusFilter === 'read' && !notif.is_read) return false;
+
+    let matchesDate = true;
+    if (notif.created_at && (startDate || endDate)) {
+      const notifDate = new Date(notif.created_at).toISOString().split('T')[0];
+      if (startDate) matchesDate = matchesDate && (notifDate >= startDate);
+      if (endDate) matchesDate = matchesDate && (notifDate <= endDate);
+    }
+    return matchesDate;
+  });
+
   // --- PDF DOCUMENT VIEWER ---
   const handleViewDocument = async (e: React.MouseEvent, poId: number, docType: 'po' | 'invoice') => {
-    e.stopPropagation(); // Prevents the row from expanding when clicking the button
+    e.stopPropagation(); 
     const token = localStorage.getItem("mswil_token");
     if (!token) return;
 
     try {
       const response = await fetch(`http://localhost:8000/purchase-orders/${poId}/download?doc_type=${docType}`, {
-        method: "GET",
-        headers: { Authorization: `Bearer ${token}` }
+        method: "GET", headers: { Authorization: `Bearer ${token}` }
       });
 
       if (response.ok) {
@@ -187,22 +248,12 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
       } else {
         alert("Document not available or you are unauthorized.");
       }
-    } catch (error) {
-      console.error("Error downloading document:", error);
-    }
+    } catch (error) { console.error("Error downloading document:", error); }
   };
 
   // --- CART HANDLERS ---
-  const handleAddCartRow = () => {
-    setCartItems([...cartItems, { item_code: '', item_name: '', quantity: 1 }]);
-  };
-
-  const handleRemoveCartRow = (index: number) => {
-    if (cartItems.length > 1) {
-      setCartItems(cartItems.filter((_, i) => i !== index));
-    }
-  };
-
+  const handleAddCartRow = () => setCartItems([...cartItems, { item_code: '', item_name: '', quantity: 1 }]);
+  const handleRemoveCartRow = (index: number) => { if (cartItems.length > 1) setCartItems(cartItems.filter((_, i) => i !== index)); };
   const handleClearCartRow = (index: number) => {
     const newCart = [...cartItems];
     newCart[index] = { item_code: '', item_name: '', quantity: 1 };
@@ -212,21 +263,14 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
   const handleSmartFill = (index: number, field: string, value: string) => {
     const newCart = [...cartItems];
     newCart[index] = { ...newCart[index], [field]: value };
-
     let matchedItem = null;
-    if (field === 'item_code') {
-      matchedItem = inventoryList.find(i => i.item_code.toString() === value);
-    } else if (field === 'item_name') {
-      matchedItem = inventoryList.find(i => i.item_name === value);
-    }
+    if (field === 'item_code') matchedItem = inventoryList.find(i => i.item_code.toString() === value);
+    else if (field === 'item_name') matchedItem = inventoryList.find(i => i.item_name === value);
 
     if (matchedItem) {
       newCart[index].item_code = matchedItem.item_code.toString();
       newCart[index].item_name = matchedItem.item_name;
-    } else if (field === 'item_code') {
-      newCart[index].item_name = '';
-    }
-
+    } else if (field === 'item_code') newCart[index].item_name = '';
     setCartItems(newCart);
   };
 
@@ -239,9 +283,7 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
   const calculateTotal = () => {
     return cartItems.reduce((total, cartItem) => {
       const inventoryItem = inventoryList.find(i => i.item_code.toString() === cartItem.item_code);
-      if (inventoryItem && cartItem.quantity) {
-        return total + (inventoryItem.price * cartItem.quantity);
-      }
+      if (inventoryItem && cartItem.quantity) return total + (inventoryItem.price * cartItem.quantity);
       return total;
     }, 0);
   };
@@ -276,21 +318,17 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
 
     try {
       const response = await fetch("http://localhost:8000/purchase-order", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify(payload)
       });
 
       if (response.ok) {
         await fetchCustomerData(); 
         setCartItems([{ item_code: '', item_name: '', quantity: 1 }]);
-        setShippingAddress('');
-        setBillingAddress('');
+        setShippingAddress(''); 
+        setBillingAddress(''); 
         setGstNumber('');
-        setUseSavedGst(false);
+        setUseSavedGst(false); 
         setIsBillingSameAsShipping(true);
         setActiveTab('Order History');
       } else {
@@ -302,18 +340,15 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
           setPoSubmitError(errorData.detail || "Failed to create Purchase Order.");
         }
       }
-    } catch (error) {
-      setPoSubmitError("Network error. Could not connect to the server.");
-    } finally {
-      setIsSubmittingPO(false);
-    }
+    } catch (error) { setPoSubmitError("Network error. Could not connect to the server."); } 
+    finally { setIsSubmittingPO(false); }
   };
 
 
   return (
     <div className="min-h-screen bg-gray-50">
       
-      {/* THE EMERALD OVERLAPPING HEADER */}
+      {/* EMERALD OVERLAPPING HEADER */}
       <div className="bg-emerald-700 pb-32">
         <Disclosure as="nav" className="border-b border-emerald-600/50 bg-emerald-700">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -344,9 +379,97 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
               </div>
               <div className="hidden md:block">
                 <div className="ml-4 flex items-center md:ml-6">
-                  <button type="button" className="relative rounded-full p-1 text-emerald-200 hover:text-white focus:outline-none">
-                    <BellIcon aria-hidden="true" className="size-6" />
-                  </button>
+                  
+                  {/* DYNAMIC NOTIFICATION BELL DROPDOWN */}
+                  <Menu as="div" className="relative ml-3">
+                    <MenuButton className="relative rounded-full p-1 text-emerald-200 hover:text-white focus:outline-none">
+                      <span className="sr-only">View notifications</span>
+                      <BellIcon aria-hidden="true" className="size-6" />
+                      {unreadCount > 0 && (
+                        <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white ring-2 ring-emerald-600">
+                          {unreadCount > 9 ? '9+' : unreadCount}
+                        </span>
+                      )}
+                    </MenuButton>
+
+                    <MenuItems
+                      transition
+                      className="absolute right-0 z-50 mt-2 w-80 sm:w-96 origin-top-right rounded-lg bg-white py-1 shadow-xl ring-1 ring-black/5 transition focus:outline-none data-closed:scale-95 data-closed:opacity-0 overflow-hidden"
+                    >
+                      <div className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between bg-gray-50/80">
+                        <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                          Notifications {unreadCount > 0 && `(${unreadCount} unread)`}
+                        </span>
+                        {unreadCount > 0 && (
+                          <button
+                            onClick={handleMarkAllAsRead}
+                            className="text-xs text-emerald-600 hover:text-emerald-800 font-semibold transition-colors"
+                          >
+                            Mark all read
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="max-h-80 overflow-y-auto divide-y divide-gray-100">
+                        {notifications.length === 0 ? (
+                          <div className="px-4 py-8 text-center text-xs text-gray-500 font-medium">
+                            No notifications recorded yet.
+                          </div>
+                        ) : (
+                          notifications.map((n) => (
+                            <MenuItem key={n.id}>
+                              {({ active }) => (
+                                <div
+                                  onClick={(e) => handleNotificationClick(e, n, true)}
+                                  className={classNames(
+                                    active ? 'bg-emerald-50/60' : '',
+                                    !n.is_read ? 'bg-emerald-50/30' : 'bg-white',
+                                    'px-4 py-3 cursor-pointer transition-colors flex items-start gap-3'
+                                  )}
+                                >
+                                  <div className="mt-0.5 shrink-0">
+                                    <span
+                                      className={classNames(
+                                        'inline-block size-2 rounded-full',
+                                        !n.is_read ? 'bg-emerald-600' : 'bg-transparent'
+                                      )}
+                                    />
+                                  </div>
+                                  <div className="flex-1">
+                                    <p className={classNames('text-xs font-bold', !n.is_read ? 'text-emerald-950' : 'text-gray-700')}>
+                                      {n.title}
+                                    </p>
+                                    <p className="text-xs text-gray-600 mt-0.5 line-clamp-2 leading-relaxed">{n.message}</p>
+                                    <span className="text-[10px] text-gray-400 mt-1 block font-medium">
+                                      {n.created_at
+                                        ? new Intl.DateTimeFormat('en-GB', {
+                                            day: '2-digit',
+                                            month: 'short',
+                                            hour: '2-digit',
+                                            minute: '2-digit'
+                                          }).format(new Date(n.created_at))
+                                        : ''}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+                            </MenuItem>
+                          ))
+                        )}
+                      </div>
+                      
+                      {/* VIEW ALL FOOTER */}
+                      <div className="p-2 border-t border-gray-100 bg-gray-50 text-center">
+                        <button 
+                          onClick={() => setActiveTab('Notifications')}
+                          className="text-xs font-bold text-emerald-600 hover:text-emerald-800 transition-colors"
+                        >
+                          View all notifications
+                        </button>
+                      </div>
+
+                    </MenuItems>
+                  </Menu>
 
                   <Menu as="div" className="relative ml-3">
                     <MenuButton className="relative flex max-w-xs items-center rounded-full bg-emerald-600 text-sm focus:outline-none ring-2 ring-white/20">
@@ -375,7 +498,7 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
         </Disclosure>
 
         <header className="py-10">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-4">
             <h1 className="text-3xl font-bold tracking-tight text-white">{activeTab}</h1>
             
             {/* THE COMPOSITE SEARCH BAR - Only Visible for Order History Tab */}
@@ -469,10 +592,10 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
                                     {isPOInvoiced ? 'Incl. of GST (18%)' : 'Excl. of GST'}
                                   </div>
                                 </td>
-                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-[200px]" : "truncate max-w-[150px]")}>
+                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-50" : "truncate max-w-37.5")}>
                                   {po.shipping_address || '--'}
                                 </td>
-                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-[200px]" : "truncate max-w-[150px]")}>
+                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-50" : "truncate max-w-37.5")}>
                                   {po.billing_address || '--'}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap">
@@ -769,7 +892,7 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
 
               {/* --- ORDER HISTORY TAB (Detailed View) --- */}
               {activeTab === 'Order History' && (
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden animate-in fade-in duration-300">
                   <div className="px-6 py-4 border-b border-gray-100 bg-white flex flex-col sm:flex-row justify-between items-center gap-4">
                     <h3 className="text-lg font-semibold text-gray-900">Complete Order History</h3>
                   </div>
@@ -802,12 +925,11 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
                     </div>
 
                     <div className="flex items-center gap-3">
-                      <button 
-                        onClick={clearFilters}
-                        className="text-sm text-gray-500 hover:text-emerald-700 transition flex items-center gap-1 font-medium mr-2"
-                      >
-                        <ArrowPathIcon className="h-4 w-4" /> Clear
-                      </button>
+                      {(statusFilter !== 'all' || startDate || endDate || searchQuery) && (
+                        <button onClick={clearFilters} className="text-sm text-gray-500 hover:text-emerald-700 transition flex items-center gap-1 font-medium mr-2">
+                          <ArrowPathIcon className="h-4 w-4" /> Clear Filters
+                        </button>
+                      )}
                       <span className="text-sm font-medium text-gray-500">Sort By:</span>
                       <select value={sortConfig} onChange={(e) => setSortConfig(e.target.value)} className="text-sm border border-gray-300 rounded-md py-1.5 pl-3 pr-8 focus:ring-emerald-500 focus:border-emerald-500 text-gray-700 bg-white shadow-sm">
                         <option value="default">Default (Newest)</option>
@@ -881,6 +1003,116 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
                                       className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 px-3 py-1.5 rounded transition inline-flex items-center gap-1 text-sm font-medium"
                                     >
                                       <DocumentArrowDownIcon className="h-4 w-4" /> Invoice
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* --- DEDICATED NOTIFICATIONS TAB --- */}
+              {activeTab === 'Notifications' && (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden animate-in fade-in duration-300">
+                  <div className="px-6 py-4 border-b border-gray-100 bg-white flex flex-col sm:flex-row justify-between items-center gap-4">
+                    <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                      <BellIcon className="h-5 w-5 text-emerald-600" /> Notification Center
+                    </h3>
+                  </div>
+                  
+                  {/* Filter Toolbar for Notifications */}
+                  <div className="px-6 py-3 bg-gray-50/80 border-b border-gray-100 flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex flex-wrap items-center gap-5">
+                      <div className="flex items-center gap-3">
+                        <FunnelIcon className="h-4 w-4 text-gray-400" />
+                        <span className="text-sm font-medium text-gray-500">Status:</span>
+                        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="text-sm border border-gray-300 rounded-md py-1.5 pl-3 pr-8 focus:ring-emerald-500 focus:border-emerald-500 text-gray-700 bg-white shadow-sm">
+                          <option value="all">All Alerts</option>
+                          <option value="unread">Unread Only</option>
+                          <option value="read">Read</option>
+                        </select>
+                      </div>
+                      
+                      <div className="hidden sm:block h-5 w-px bg-gray-300"></div>
+                      
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-medium text-gray-500">From:</span>
+                        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="text-sm border border-gray-300 rounded-md py-1.5 px-3 focus:ring-emerald-500 focus:border-emerald-500 text-gray-700 bg-white shadow-sm" />
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-medium text-gray-500">To:</span>
+                        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="text-sm border border-gray-300 rounded-md py-1.5 px-3 focus:ring-emerald-500 focus:border-emerald-500 text-gray-700 bg-white shadow-sm" />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      {(statusFilter !== 'all' || startDate || endDate) && (
+                        <button onClick={clearFilters} className="text-sm text-gray-500 hover:text-emerald-700 transition flex items-center gap-1 font-medium mr-2">
+                          <ArrowPathIcon className="h-4 w-4" /> Clear Filters
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50/50">
+                        <tr>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date & Time</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Title</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Alert Details</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                          <th className="px-6 py-4 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 bg-white">
+                        {filteredNotifications.length === 0 ? (
+                          <tr><td colSpan={5} className="px-6 py-12 text-center text-gray-500">
+                            {startDate || endDate || statusFilter !== 'all' ? "No notifications match your filters." : "No notifications recorded yet."}
+                          </td></tr>
+                        ) : (
+                          filteredNotifications.map((notif) => {
+                            return (
+                              <tr key={notif.id} className="hover:bg-gray-50 transition-colors">
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                  <div className="text-sm font-bold text-gray-900">
+                                    {notif.created_at ? new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(notif.created_at)) : '--'}
+                                  </div>
+                                  <div className="text-[10px] text-gray-500 font-medium tracking-wide uppercase mt-0.5">
+                                    {notif.created_at ? new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' }).format(new Date(notif.created_at)) : ''}
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                  <div className={classNames("text-sm", !notif.is_read ? "font-bold text-emerald-900" : "font-medium text-gray-800")}>
+                                    {notif.title}
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="text-sm text-gray-600 whitespace-pre-wrap max-w-lg leading-relaxed">
+                                    {notif.message}
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                  <StatusBadge status={notif.is_read ? 'Read' : 'Unread'} />
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap flex justify-center gap-2">
+                                  <button 
+                                    onClick={(e) => handleNotificationClick(e, notif, true)}
+                                    className="text-xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-3 py-1.5 rounded font-bold transition shadow-sm border border-emerald-200 inline-flex items-center gap-1"
+                                  >
+                                    <EyeIcon className="h-4 w-4" /> View Details
+                                  </button>
+                                  {!notif.is_read && (
+                                    <button 
+                                      onClick={(e) => handleNotificationClick(e, notif, false)}
+                                      className="text-xs bg-gray-50 text-gray-600 hover:bg-gray-100 px-3 py-1.5 rounded font-medium transition inline-flex items-center gap-1 border border-gray-200"
+                                    >
+                                      Mark Read
                                     </button>
                                   )}
                                 </td>

@@ -18,10 +18,12 @@ const StatusBadge = ({ status }: { status: string }) => {
     colorClass = 'bg-emerald-100 text-emerald-800 border-emerald-200';
   } else if (status === 'Invoiced') {
     colorClass = 'bg-indigo-100 text-indigo-800 border-indigo-200';
-  } else if (status === 'Backordered' || status === 'Pending') {
+  } else if (status === 'Backordered' || status === 'Pending' || status === 'Unread') {
     colorClass = 'bg-orange-100 text-orange-800 border-orange-200';
   } else if (status === 'Low Stock' || status === 'Out of Stock') {
     colorClass = 'bg-red-100 text-red-800 border-red-200';
+  } else if (status === 'Read') {
+    colorClass = 'bg-blue-200 text-gray-800 border-gray-200';
   }
 
   return (
@@ -40,18 +42,6 @@ const ActionBadge = ({ action }: { action: string }) => {
   return (
     <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-[10px] font-black tracking-wider uppercase border ${colorClass}`}>
       {action}
-    </span>
-  );
-};
-
-const RoleBadge = ({ role }: { role: string }) => {
-  const isAdmin = role.toLowerCase() === 'admin';
-  return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
-      isAdmin ? 'bg-purple-100 text-purple-800 border-purple-200' : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-    }`}>
-      {isAdmin ? <ShieldCheckIcon className="h-3.5 w-3.5" /> : <UserIcon className="h-3.5 w-3.5" />}
-      {isAdmin ? 'MSWIL Admin' : 'Customer'}
     </span>
   );
 };
@@ -85,6 +75,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
     { name: 'Inventory' },
     { name: 'Manage Customers' },
     { name: 'Purchase Orders' },
+    { name: 'Notifications' },
     { name: 'Activity History' },
   ];
 
@@ -107,6 +98,86 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
   const [isDeleteCustomerModalOpen, setIsDeleteCustomerModalOpen] = useState(false);
   const [deleteCustomerError, setDeleteCustomerError] = useState('');
   const [isDeletingCustomer, setIsDeletingCustomer] = useState(false);
+
+  // --- NOTIFICATION STATES & HANDLERS ---
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const unreadCount = notifications.filter(n => !n.is_read).length;
+
+  const fetchNotifications = async () => {
+    const token = localStorage.getItem("mswil_token");
+    if (!token) return;
+
+    try {
+      const res = await fetch("http://localhost:8000/notifications", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setNotifications(await res.json());
+      }
+    } catch (error) {
+      console.error("Failed to fetch notifications:", error);
+    }
+  };
+
+  const handleNotificationClick = async (e: React.MouseEvent, notif: any, directRoute: boolean = true) => {
+    e.stopPropagation();
+    const token = localStorage.getItem("mswil_token");
+    
+    // Mark as read in backend if unread
+    if (!notif.is_read && token) {
+      try {
+        await fetch(`http://localhost:8000/notifications/${notif.id}/read`, {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
+      } catch (error) {
+        console.error("Failed to mark notification as read:", error);
+      }
+    }
+
+    // Perform Deep Routing
+    if (directRoute) {
+      isDeepLink.current = true;
+      setStatusFilter('all');
+      setStartDate('');
+      setEndDate('');
+      setSortConfig('default');
+
+      // Regex to extract the entity ID from the notification text (e.g., matching "#5")
+      const idMatch = notif.message.match(/#(\d+)/);
+      const extractedId = idMatch ? idMatch[1] : '';
+
+      if (notif.title.toLowerCase().includes("purchase order") || notif.title.toLowerCase().includes("invoice")) {
+        setActiveTab("Purchase Orders");
+        if (extractedId) {
+          setSearchQuery(extractedId);
+          setSearchScope('id');
+        }
+      } else if (notif.title.toLowerCase().includes("registration") || notif.title.toLowerCase().includes("account")) {
+        setActiveTab("Manage Customers");
+        if (extractedId) {
+          setSearchQuery(extractedId);
+          setSearchScope('id');
+        }
+      }
+    }
+  };
+
+  const handleMarkAllAsRead = async () => {
+    const token = localStorage.getItem("mswil_token");
+    if (!token) return;
+
+    try {
+      await fetch("http://localhost:8000/notifications/read-all", {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    } catch (error) {
+      console.error("Failed to mark all notifications as read:", error);
+    }
+  };
 
   // Reset Filters when switching tabs
   useEffect(() => {
@@ -161,6 +232,13 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
     } catch (error) { console.error("Failed to fetch dashboard data:", error); } 
     finally { setLoading(false); }
   };
+
+  // Fetch initial notifications and set up polling
+  useEffect(() => {
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const fetchCustomers = async () => {
     const token = localStorage.getItem("mswil_token");
@@ -277,22 +355,30 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
     return matchesSearch && matchesDate;
   });
 
+  const filteredNotifications = notifications.filter((notif) => {
+    if (statusFilter === 'unread' && notif.is_read) return false;
+    if (statusFilter === 'read' && !notif.is_read) return false;
+
+    let matchesDate = true;
+    if (notif.created_at && (startDate || endDate)) {
+      const notifDate = new Date(notif.created_at).toISOString().split('T')[0];
+      if (startDate) matchesDate = matchesDate && (notifDate >= startDate);
+      if (endDate) matchesDate = matchesDate && (notifDate <= endDate);
+    }
+    return matchesDate;
+  });
+
   // --- LOG DEEP LINK NAVIGATION HANDLER ---
   const handleLogDetailsNavigation = (e: React.MouseEvent, log: any) => {
-    e.stopPropagation(); // Prevents the JSON row from expanding when clicking the button
+    e.stopPropagation(); 
 
     isDeepLink.current = true;
-    
-    // Clear any residual date/status filters
     setStatusFilter('all');
     setStartDate('');
     setEndDate('');
     setSortConfig('default');
-    
-    // Inject the ID into the search bar
     setSearchQuery(log.entity_id.toString());
 
-    // Route to the correct tab & scope
     if (log.entity_type === 'InventoryItem') {
       setActiveTab('Inventory');
       setSearchScope('code');
@@ -479,12 +565,97 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
               </div>
               <div className="hidden md:block">
                 <div className="ml-4 flex items-center md:ml-6">
-                  <button type="button" className="relative rounded-full p-1 text-indigo-200 hover:text-white focus:outline-none">
-                    <span className="absolute -inset-1.5" />
-                    <span className="sr-only">View notifications</span>
-                    <BellIcon aria-hidden="true" className="size-6" />
-                    <span className="absolute top-1 right-1 block h-2 w-2 rounded-full bg-red-500 ring-2 ring-indigo-600"></span>
-                  </button>
+                  
+                  {/* DYNAMIC NOTIFICATION BELL DROPDOWN */}
+                  <Menu as="div" className="relative ml-3">
+                    <MenuButton className="relative rounded-full p-1 text-indigo-200 hover:text-white focus:outline-none">
+                      <span className="sr-only">View notifications</span>
+                      <BellIcon aria-hidden="true" className="size-6" />
+                      {unreadCount > 0 && (
+                        <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white ring-2 ring-indigo-600">
+                          {unreadCount > 9 ? '9+' : unreadCount}
+                        </span>
+                      )}
+                    </MenuButton>
+
+                    <MenuItems
+                      transition
+                      className="absolute right-0 z-50 mt-2 w-80 sm:w-96 origin-top-right rounded-lg bg-white py-1 shadow-xl ring-1 ring-black/5 transition focus:outline-none data-closed:scale-95 data-closed:opacity-0 overflow-hidden"
+                    >
+                      <div className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between bg-gray-50/80">
+                        <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                          Notifications {unreadCount > 0 && `(${unreadCount} unread)`}
+                        </span>
+                        {unreadCount > 0 && (
+                          <button
+                            onClick={handleMarkAllAsRead}
+                            className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold transition-colors"
+                          >
+                            Mark all read
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="max-h-80 overflow-y-auto divide-y divide-gray-100">
+                        {notifications.length === 0 ? (
+                          <div className="px-4 py-8 text-center text-xs text-gray-500 font-medium">
+                            No notifications recorded yet.
+                          </div>
+                        ) : (
+                          notifications.map((n) => (
+                            <MenuItem key={n.id}>
+                              {({ active }) => (
+                                <div
+                                  onClick={(e) => handleNotificationClick(e, n, true)}
+                                  className={classNames(
+                                    active ? 'bg-indigo-50/60' : '',
+                                    !n.is_read ? 'bg-indigo-50/30' : 'bg-white',
+                                    'px-4 py-3 cursor-pointer transition-colors flex items-start gap-3'
+                                  )}
+                                >
+                                  <div className="mt-0.5 shrink-0">
+                                    <span
+                                      className={classNames(
+                                        'inline-block size-2 rounded-full',
+                                        !n.is_read ? 'bg-indigo-600' : 'bg-transparent'
+                                      )}
+                                    />
+                                  </div>
+                                  <div className="flex-1">
+                                    <p className={classNames('text-xs font-bold', !n.is_read ? 'text-indigo-950' : 'text-gray-700')}>
+                                      {n.title}
+                                    </p>
+                                    <p className="text-xs text-gray-600 mt-0.5 line-clamp-2 leading-relaxed">{n.message}</p>
+                                    <span className="text-[10px] text-gray-400 mt-1 block font-medium">
+                                      {n.created_at
+                                        ? new Intl.DateTimeFormat('en-GB', {
+                                            day: '2-digit',
+                                            month: 'short',
+                                            hour: '2-digit',
+                                            minute: '2-digit'
+                                          }).format(new Date(n.created_at))
+                                        : ''}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+                            </MenuItem>
+                          ))
+                        )}
+                      </div>
+                      
+                      {/* VIEW ALL FOOTER */}
+                      <div className="p-2 border-t border-gray-100 bg-gray-50 text-center">
+                        <button 
+                          onClick={() => setActiveTab('Notifications')}
+                          className="text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors"
+                        >
+                          View all notifications
+                        </button>
+                      </div>
+
+                    </MenuItems>
+                  </Menu>
 
                   <Menu as="div" className="relative ml-3">
                     <MenuButton className="relative flex max-w-xs items-center rounded-full bg-indigo-600 text-sm focus:outline-none">
@@ -549,56 +720,58 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
             
             {/* THE COMPOSITE SEARCH BAR */}
             <div className="w-full lg:w-auto">
-              <div className="flex rounded-md shadow-sm w-full lg:min-w-[500px]">
-                {activeTab !== 'Dashboard' && (
-                  <select
-                    value={searchScope}
-                    onChange={(e) => setSearchScope(e.target.value)}
-                    className="bg-indigo-700/80 text-indigo-100 border-r border-indigo-500/50 rounded-l-md px-3 py-2 text-sm focus:outline-none focus:bg-indigo-800 transition-colors font-medium cursor-pointer"
-                  >
-                    <option value="all">All Fields</option>
-                    {activeTab === 'Inventory' && (
-                      <>
-                        <option value="code">Item Code</option>
-                        <option value="name">Name / Desc</option>
-                      </>
-                    )}
-                    {activeTab === 'Manage Customers' && (
-                      <>
-                        <option value="id">User ID</option>
-                        <option value="name">Name</option>
-                        <option value="org">Organization</option>
-                        <option value="email">Email</option>
-                      </>
-                    )}
-                    {activeTab === 'Purchase Orders' && (
-                      <>
-                        <option value="id">PO ID</option>
-                        <option value="org">Organization</option>
-                        <option value="name">Customer Name</option>
-                        <option value="admin">Invoiced By</option>
-                      </>
-                    )}
-                    {activeTab === 'Activity History' && (
-                      <>
-                        <option value="admin">Admin Name/Email</option>
-                        <option value="entity">Target ID/Type</option>
-                      </>
-                    )}
-                  </select>
-                )}
-                
-                <div className="relative flex-grow">
-                  <MagnifyingGlassIcon className={`absolute left-3 top-2.5 h-5 w-5 text-indigo-300 ${activeTab !== 'Dashboard' ? 'hidden sm:block' : ''}`} />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder={`Search ${activeTab.toLowerCase()}...`}
-                    className={`w-full bg-indigo-500/40 border border-transparent text-white placeholder-indigo-200 py-2 pr-3 focus:outline-none focus:bg-indigo-500 focus:ring-2 focus:ring-indigo-300 transition-colors sm:text-sm ${activeTab !== 'Dashboard' ? 'rounded-r-md pl-3 sm:pl-10' : 'rounded-md pl-10'}`}
-                  />
+              {activeTab !== 'Notifications' && (
+                <div className="flex rounded-md shadow-sm w-full lg:min-w-[500px]">
+                  {activeTab !== 'Dashboard' && (
+                    <select
+                      value={searchScope}
+                      onChange={(e) => setSearchScope(e.target.value)}
+                      className="bg-indigo-700/80 text-indigo-100 border-r border-indigo-500/50 rounded-l-md px-3 py-2 text-sm focus:outline-none focus:bg-indigo-800 transition-colors font-medium cursor-pointer"
+                    >
+                      <option value="all">All Fields</option>
+                      {activeTab === 'Inventory' && (
+                        <>
+                          <option value="code">Item Code</option>
+                          <option value="name">Name / Desc</option>
+                        </>
+                      )}
+                      {activeTab === 'Manage Customers' && (
+                        <>
+                          <option value="id">User ID</option>
+                          <option value="name">Name</option>
+                          <option value="org">Organization</option>
+                          <option value="email">Email</option>
+                        </>
+                      )}
+                      {activeTab === 'Purchase Orders' && (
+                        <>
+                          <option value="id">PO ID</option>
+                          <option value="org">Organization</option>
+                          <option value="name">Customer Name</option>
+                          <option value="admin">Invoiced By</option>
+                        </>
+                      )}
+                      {activeTab === 'Activity History' && (
+                        <>
+                          <option value="admin">Admin Name/Email</option>
+                          <option value="entity">Target ID/Type</option>
+                        </>
+                      )}
+                    </select>
+                  )}
+                  
+                  <div className="relative flex-grow">
+                    <MagnifyingGlassIcon className={`absolute left-3 top-2.5 h-5 w-5 text-indigo-300 ${activeTab !== 'Dashboard' ? 'hidden sm:block' : ''}`} />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder={`Search ${activeTab.toLowerCase()}...`}
+                      className={`w-full bg-indigo-500/40 border border-transparent text-white placeholder-indigo-200 py-2 pr-3 focus:outline-none focus:bg-indigo-500 focus:ring-2 focus:ring-indigo-300 transition-colors sm:text-sm ${activeTab !== 'Dashboard' ? 'rounded-r-md pl-3 sm:pl-10' : 'rounded-md pl-10'}`}
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </header>
@@ -1108,6 +1281,116 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                                     </button>
                                   )}
 
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* --- DEDICATED NOTIFICATIONS TAB --- */}
+              {activeTab === 'Notifications' && (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden animate-in fade-in duration-300">
+                  <div className="px-6 py-4 border-b border-gray-100 bg-white flex flex-col sm:flex-row justify-between items-center gap-4">
+                    <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                      <BellIcon className="h-5 w-5 text-indigo-600" /> Notification Center
+                    </h3>
+                  </div>
+                  
+                  {/* Filter Toolbar for Notifications */}
+                  <div className="px-6 py-3 bg-gray-50/80 border-b border-gray-100 flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex flex-wrap items-center gap-5">
+                      <div className="flex items-center gap-3">
+                        <FunnelIcon className="h-4 w-4 text-gray-400" />
+                        <span className="text-sm font-medium text-gray-500">Status:</span>
+                        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="text-sm border border-gray-300 rounded-md py-1.5 pl-3 pr-8 focus:ring-indigo-500 focus:border-indigo-500 text-gray-700 bg-white shadow-sm">
+                          <option value="all">All Alerts</option>
+                          <option value="unread">Unread Only</option>
+                          <option value="read">Read</option>
+                        </select>
+                      </div>
+                      
+                      <div className="hidden sm:block h-5 w-px bg-gray-300"></div>
+                      
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-medium text-gray-500">From:</span>
+                        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="text-sm border border-gray-300 rounded-md py-1.5 px-3 focus:ring-indigo-500 focus:border-indigo-500 text-gray-700 bg-white shadow-sm" />
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-medium text-gray-500">To:</span>
+                        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="text-sm border border-gray-300 rounded-md py-1.5 px-3 focus:ring-indigo-500 focus:border-indigo-500 text-gray-700 bg-white shadow-sm" />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      {(statusFilter !== 'all' || startDate || endDate) && (
+                        <button onClick={clearFilters} className="text-sm text-gray-500 hover:text-indigo-700 transition flex items-center gap-1 font-medium mr-2">
+                          <ArrowPathIcon className="h-4 w-4" /> Clear Filters
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50/50">
+                        <tr>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date & Time</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Title</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Alert Details</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                          <th className="px-6 py-4 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 bg-white">
+                        {filteredNotifications.length === 0 ? (
+                          <tr><td colSpan={5} className="px-6 py-12 text-center text-gray-500">
+                            {startDate || endDate || statusFilter !== 'all' ? "No notifications match your filters." : "No notifications recorded yet."}
+                          </td></tr>
+                        ) : (
+                          filteredNotifications.map((notif) => {
+                            return (
+                              <tr key={notif.id} className="hover:bg-gray-50 transition-colors">
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                  <div className="text-sm font-bold text-gray-900">
+                                    {notif.created_at ? new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(notif.created_at)) : '--'}
+                                  </div>
+                                  <div className="text-[10px] text-gray-500 font-medium tracking-wide uppercase mt-0.5">
+                                    {notif.created_at ? new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' }).format(new Date(notif.created_at)) : ''}
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                  <div className={classNames("text-sm", !notif.is_read ? "font-bold text-indigo-900" : "font-medium text-gray-800")}>
+                                    {notif.title}
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="text-sm text-gray-600 whitespace-pre-wrap max-w-lg leading-relaxed">
+                                    {notif.message}
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                  <StatusBadge status={notif.is_read ? 'Read' : 'Unread'} />
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap flex justify-center gap-2">
+                                  <button 
+                                    onClick={(e) => handleNotificationClick(e, notif, true)}
+                                    className="text-xs bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-3 py-1.5 rounded font-bold transition shadow-sm border border-indigo-200 inline-flex items-center gap-1"
+                                  >
+                                    <EyeIcon className="h-4 w-4" /> View Details
+                                  </button>
+                                  {!notif.is_read && (
+                                    <button 
+                                      onClick={(e) => handleNotificationClick(e, notif, false)}
+                                      className="text-xs bg-gray-50 text-gray-600 hover:bg-gray-100 px-3 py-1.5 rounded font-medium transition inline-flex items-center gap-1 border border-gray-200"
+                                    >
+                                      Mark Read
+                                    </button>
+                                  )}
                                 </td>
                               </tr>
                             );

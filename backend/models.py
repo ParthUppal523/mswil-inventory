@@ -24,6 +24,8 @@ class User(Base):
     customer_profile = relationship("CustomerProfile", back_populates="user", uselist=False)
     employee_profile = relationship("EmployeeProfile", back_populates="user", uselist=False)
 
+    # Email Notifications Preference (default to True for all users)
+    email_notifications = Column(Boolean, default=True)
 
 # 2. CUSTOMER SPECIFIC DATA
 class CustomerProfile(Base):
@@ -109,3 +111,14 @@ class AdminActivityLog(Base):
     
     # The Delta Payload
     changes = Column(JSON, nullable=True)        # Will store {"price": {"old": 100, "new": 120}}
+
+# 7. NOTIFICATIONS
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    recipient_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String, nullable=False)
+    message = Column(String, nullable=False)
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

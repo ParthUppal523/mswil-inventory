@@ -51,7 +51,7 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
     return {"access_token": access_token, "token_type": "bearer"}
 
 @app.post("/register")
-def register_user(request: schemas.UserRegistrationRequest, db: Session = Depends(get_db)):
+def register_user(request: schemas.UserRegistrationRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     # Ensure email is not already in use
     if db.query(models.User).filter(models.User.email == request.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -94,6 +94,13 @@ def register_user(request: schemas.UserRegistrationRequest, db: Session = Depend
         db.add(profile)
         
     db.commit()
+
+    background_tasks.add_task(
+        logger_utils.notify_admins, 
+        db, 
+        "New Registration Pending", 
+        f"A new user ({new_user.username}) has registered for {request.company} and requires approval."
+    )
 
     return {
         "message": "Registration submitted successfully. Pending admin approval.", 
@@ -406,6 +413,7 @@ def get_activity_logs(
 @app.post("/purchase-order", response_model=schemas.PurchaseOrderResponse)
 def create_purchase_order(
     po_request: schemas.PurchaseOrderCreate, 
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth_utils.get_current_user)
 ):
@@ -507,6 +515,13 @@ def create_purchase_order(
         pdf_utils.generate_enterprise_pdf(po_file, "PURCHASE ORDER", new_po.id, customer_dict, pdf_item_list, address_dict)
         # pdf_utils.generate_enterprise_pdf(inv_file, "TAX INVOICE", new_po.id, customer_dict, pdf_item_list, address_dict)
     
+    background_tasks.add_task(
+        logger_utils.notify_admins, 
+        db, 
+        "New Purchase Order", 
+        f"A new Purchase Order (#{new_po.id}) has been submitted by User #{current_user.id}.\nCustomer Details: {current_user.first_name} {current_user.last_name} ({current_user.username})\nOrganization: {customer_profile.organization_name if customer_profile else 'Individual Customer'}\nTotal Amount: ₹{total_order_value:.2f}\nStatus: {'Backordered' if is_backordered else 'Approved'}"
+    )
+
     return new_po
 
 @app.get("/purchase-orders", response_model=list[schemas.PurchaseOrderResponse])
@@ -590,6 +605,55 @@ def download_document(
         
     # 4. Return the requested file
     return FileResponse(path=file_path, filename=download_name, media_type='application/pdf')
+
+
+# NOTIFICATION ENDPOINTS
+@app.get("/notifications", response_model=list[schemas.NotificationResponse])
+def get_user_notifications(
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(auth_utils.get_current_user)
+):
+    """Fetches all notifications for the currently logged-in user (Admin or Customer)."""
+    # Fetch notifications belonging to this user, newest first
+    notifs = db.query(models.Notification).filter(
+        models.Notification.recipient_id == current_user.id
+    ).order_by(models.Notification.created_at.desc()).all()
+    
+    return notifs
+
+@app.put("/notifications/{notif_id}/read")
+def mark_notification_read(
+    notif_id: int, 
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(auth_utils.get_current_user)
+):
+    """Marks a single notification as read when the user clicks it."""
+    # Ensure the notification exists AND belongs to the user requesting the change
+    notif = db.query(models.Notification).filter(
+        models.Notification.id == notif_id,
+        models.Notification.recipient_id == current_user.id
+    ).first()
+    
+    if not notif:
+        raise HTTPException(status_code=404, detail="Notification not found.")
+        
+    notif.is_read = True
+    db.commit()
+    return {"message": "Notification marked as read."}
+
+@app.put("/notifications/read-all")
+def mark_all_notifications_read(
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(auth_utils.get_current_user)
+):
+    """Bulk action: Marks all unread notifications as read to clear the bell badge."""
+    db.query(models.Notification).filter(
+        models.Notification.recipient_id == current_user.id,
+        models.Notification.is_read == False
+    ).update({"is_read": True})
+    
+    db.commit()
+    return {"message": "All notifications cleared."}
 
 @app.get("/")
 def read_root():
