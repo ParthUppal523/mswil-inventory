@@ -11,7 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import pdf_utils
 import logger_utils
 import os
-from datetime import datetime
+import calendar
+from datetime import datetime, timedelta
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -675,4 +676,146 @@ def read_root():
         "status": "online",
         "message": "Welcome to Motherson Sumi Wiring India Ltd. Inventory System API",
         "database": "Connected and schemas generated"
+    }
+
+
+# DASHBOARD ANALYTICS ENDPOINTS
+@app.get("/admin/analytics")
+def get_admin_analytics(
+    db: Session = Depends(get_db), 
+    admin_user: models.User = Depends(auth_utils.get_current_admin)
+):
+    """Calculates enterprise KPIs and chart data for the Admin Dashboard."""
+    
+    current_year = datetime.now().year
+    current_month = datetime.now().month
+    pos = db.query(models.PurchaseOrder).all()
+    
+    # 1. Initialize KPI Counters
+    kpis = {
+        "revenue_ytd": 0.0,
+        "revenue_mtd": 0.0,
+        "pending_count": 0,
+        "pending_value": 0.0,
+        "backordered_count": 0,
+        "backordered_value": 0.0,
+        "low_stock_count": 0,
+        "pending_customers": 0
+    }
+    
+    # Dictionaries for Chart Aggregation
+    status_dict = {}
+    revenue_trend_dict = {}
+    
+    # 2. Process Purchase Orders
+    for po in pos:
+        status_dict[po.status] = status_dict.get(po.status, 0) + 1
+        
+        if po.status == "Invoiced":
+            if po.created_at.year == current_year:
+                kpis["revenue_ytd"] += po.total_amount
+                if po.created_at.month == current_month:
+                    kpis["revenue_mtd"] += po.total_amount
+                    
+            month_key = f"{calendar.month_abbr[po.created_at.month]} {po.created_at.year}"
+            revenue_trend_dict[month_key] = revenue_trend_dict.get(month_key, 0.0) + po.total_amount
+            
+        elif po.status == "Pending":
+            kpis["pending_count"] += 1
+            kpis["pending_value"] += po.total_amount
+            
+        elif po.status == "Backordered":
+            kpis["backordered_count"] += 1
+            kpis["backordered_value"] += po.total_amount
+
+    # 3. Process Inventory Warnings (< 10 units)
+    kpis["low_stock_count"] = db.query(models.InventoryItem).filter(models.InventoryItem.quantity < 10).count()
+    
+    # 4. Process Pending Customers
+    kpis["pending_customers"] = db.query(models.User).filter(
+        models.User.role == "customer", 
+        models.User.is_approved == False
+    ).count()
+    
+    # 5. Build Top 5 Fast-Moving Items Chart
+    po_items = db.query(models.PurchaseOrderItem).join(models.PurchaseOrder).filter(
+        models.PurchaseOrder.status.in_(["Approved", "Invoiced"])
+    ).all()
+    
+    item_sales = {}
+    for po_item in po_items:
+        inv_item = db.query(models.InventoryItem).filter(models.InventoryItem.item_code == po_item.item_code).first()
+        name = inv_item.item_name if inv_item else f"Item #{po_item.item_code}"
+        item_sales[name] = item_sales.get(name, 0) + po_item.ordered_quantity
+        
+    # Sort and slice top 5
+    top_items = [{"name": k, "value": v} for k, v in sorted(item_sales.items(), key=lambda item: item[1], reverse=True)[:5]]
+    
+    # 6. Format Charts for Recharts (React)
+    status_chart = [{"name": k, "value": v} for k, v in status_dict.items()]
+    
+    # Generate a strict 6-month trailing array (ensures months with $0 revenue are still graphed)
+    trend_chart = []
+    today = datetime.now()
+    for i in range(5, -1, -1):
+        m = today.month - i
+        y = today.year
+        if m <= 0:
+            m += 12
+            y -= 1
+        month_str = f"{calendar.month_abbr[m]} {y}"
+        trend_chart.append({
+            "name": calendar.month_abbr[m],
+            "revenue": revenue_trend_dict.get(month_str, 0.0)
+        })
+
+    return {
+        "kpis": kpis,
+        "charts": {
+            "trend": trend_chart,
+            "status": status_chart,
+            "top_items": top_items
+        }
+    }
+
+@app.get("/customer/analytics")
+def get_customer_analytics(
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(auth_utils.get_current_user)
+):
+    """Calculates specific fulfillment KPIs and charts for a single customer."""
+    pos = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.customer_id == current_user.id).all()
+    
+    kpis = {
+        "pipeline_count": 0,
+        "pipeline_value": 0.0,
+        "backordered_count": 0,
+        "backordered_value": 0.0,
+        "total_orders": len(pos)
+    }
+    
+    for po in pos:
+        if po.status in ["Approved", "Pending"]:
+            kpis["pipeline_count"] += 1
+            kpis["pipeline_value"] += po.total_amount
+        elif po.status == "Backordered":
+            kpis["backordered_count"] += 1
+            kpis["backordered_value"] += po.total_amount
+
+    # Aggregate Most Purchased Items
+    po_items = db.query(models.PurchaseOrderItem).join(models.PurchaseOrder).filter(
+        models.PurchaseOrder.customer_id == current_user.id
+    ).all()
+    
+    item_sales = {}
+    for po_item in po_items:
+        inv_item = db.query(models.InventoryItem).filter(models.InventoryItem.item_code == po_item.item_code).first()
+        name = inv_item.item_name if inv_item else f"Item #{po_item.item_code}"
+        item_sales[name] = item_sales.get(name, 0) + po_item.ordered_quantity
+        
+    top_items = [{"name": k, "value": v} for k, v in sorted(item_sales.items(), key=lambda item: item[1], reverse=True)[:5]]
+    
+    return {
+        "kpis": kpis,
+        "charts": { "top_items": top_items }
     }

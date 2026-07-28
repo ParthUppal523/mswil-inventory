@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, Fragment } from 'react';
 import { Disclosure, DisclosureButton, DisclosurePanel, Menu, MenuButton, MenuItem, MenuItems, Listbox, ListboxButton, ListboxOption, ListboxOptions, Dialog, DialogPanel, DialogTitle, DialogBackdrop } from '@headlessui/react';
 import { Bars3Icon, BellIcon, XMarkIcon, MagnifyingGlassIcon, DocumentTextIcon, DocumentArrowDownIcon, TrashIcon, PlusIcon, ChevronUpDownIcon, FunnelIcon, ArrowPathIcon, EyeIcon } from '@heroicons/react/24/outline';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 
 const userNavigation = [
   { name: 'Your profile', href: '#' },
@@ -65,6 +66,10 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
   const [notifications, setNotifications] = useState<any[]>([]);
   const unreadCount = notifications.filter(n => !n.is_read).length;
 
+  // --- ANALYTICS STATES ---
+  const [analytics, setAnalytics] = useState<any>(null);
+  const COLORS = ['#059669', '#10b981', '#34d399', '#6ee7b7', '#a7f3d0']; // Emerald color palette for Customer Dashboard
+
   const navigation = [
     { name: 'Dashboard' },
     { name: 'Submit PO' },
@@ -106,6 +111,10 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
 
       const invRes = await fetch("http://localhost:8000/inventory", { headers: { Authorization: `Bearer ${token}` } });
       if (invRes.ok) setInventoryList(await invRes.json());
+
+      const analyticsRes = await fetch("http://localhost:8000/customer/analytics", { headers: { Authorization: `Bearer ${token}` } });
+      if (analyticsRes.ok) setAnalytics(await analyticsRes.json());
+      
     } catch (error) { console.error("Failed to fetch customer data:", error); } 
     finally { setLoading(false); }
   };
@@ -349,7 +358,7 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
     <div className="min-h-screen bg-gray-50">
       
       {/* EMERALD OVERLAPPING HEADER */}
-      <div className="bg-emerald-700 pb-32">
+      <div className={classNames("bg-emerald-700 transition-all duration-300", activeTab === 'Dashboard' ? "pb-64" : "pb-32")}>
         <Disclosure as="nav" className="border-b border-emerald-600/50 bg-emerald-700">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="flex h-16 items-center justify-between">
@@ -531,7 +540,7 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
         </header>
       </div>
 
-      <main className="-mt-32">
+      <main className={classNames("transition-all duration-300", activeTab === 'Dashboard' ? "-mt-64" : "-mt-32")}>
         <div className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8">
           
           {loading ? (
@@ -542,87 +551,154 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
             <>
               {/* --- DASHBOARD TAB --- */}
               {activeTab === 'Dashboard' && (
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                  <div className="px-6 py-5 border-b border-gray-100 flex justify-between items-center bg-white">
-                    <h3 className="text-lg font-semibold text-gray-900">Recent Purchase Orders</h3>
-                    <button 
-                      onClick={() => setActiveTab('Submit PO')}
-                      className="text-sm bg-emerald-600 text-white px-4 py-2 rounded-md font-medium hover:bg-emerald-700 transition-colors shadow-sm"
-                    >
-                      + Create New PO
-                    </button>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50/50">
-                        <tr>
-                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
-                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">PO ID</th>
-                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Value</th>
-                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Shipping Address</th>
-                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Billing Address</th>
-                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                          <th className="px-6 py-4 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Documents</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100 bg-white">
-                        {purchaseOrders.length === 0 ? (
-                          <tr><td colSpan={7} className="px-6 py-12 text-center text-gray-500">Your recent purchase orders will appear here.</td></tr>
-                        ) : (
-                          purchaseOrders.slice(0, 5).map((po) => {
-                            const isExpanded = expandedRow === po.id;
-                            const isPOInvoiced = po.status === 'Invoiced';
-                            const displayTotal = isPOInvoiced ? po.total_amount * 1.18 : po.total_amount;
-                            
-                            return (
-                              <tr 
-                                key={po.id} 
-                                onClick={() => setExpandedRow(isExpanded ? null : po.id)}
-                                className={classNames("hover:bg-gray-50 transition-colors cursor-pointer", isExpanded ? "bg-emerald-50/30" : "")}
-                              >
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                  {po.created_at ? new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(po.created_at)) : '--'}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">#{po.id}</td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <div className="text-sm font-semibold text-gray-900">
-                                    {po.total_amount ? `₹${displayTotal.toFixed(2)}` : '₹ --'}
-                                  </div>
-                                  <div className="text-[10px] text-gray-400 font-normal mt-0.5">
-                                    {isPOInvoiced ? 'Incl. of GST (18%)' : 'Excl. of GST'}
-                                  </div>
-                                </td>
-                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-50" : "truncate max-w-37.5")}>
-                                  {po.shipping_address || '--'}
-                                </td>
-                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-50" : "truncate max-w-37.5")}>
-                                  {po.billing_address || '--'}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <StatusBadge status={po.status} />
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap flex justify-center gap-3">
-                                  <button 
-                                    onClick={(e) => handleViewDocument(e, po.id, 'po')}
-                                    className="text-emerald-600 hover:text-emerald-900 bg-emerald-50 px-3 py-1.5 rounded transition inline-flex items-center gap-1 text-sm font-medium"
+                <div className="space-y-6">
+                  {/* KPI CARDS */}
+                  {analytics && (
+                    <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+                      {/* Pipeline Orders */}
+                      <div 
+                        onClick={() => { isDeepLink.current = true; setActiveTab('Order History'); setStatusFilter('approved'); }}
+                        className="overflow-hidden rounded-xl bg-white shadow-sm border border-gray-200 p-5 cursor-pointer hover:border-emerald-300 hover:ring-1 hover:ring-emerald-300 transition group"
+                      >
+                        <dt className="truncate text-sm font-medium text-gray-500 uppercase tracking-wider group-hover:text-emerald-600">Pipeline Orders <span className="mt-2 text-xs text-gray-400 font-medium">  &bull; Pending Invoice</span></dt>
+                        <dd className="mt-1 text-3xl font-black tracking-tight text-gray-900">{analytics.kpis.pipeline_count}</dd>
+                        <div className="mt-2 text-xs text-emerald-600 font-semibold">Value: ₹{analytics.kpis.pipeline_value.toLocaleString()}</div>
+                      </div>
+
+                      {/* Backordered */}
+                      <div 
+                        onClick={() => { isDeepLink.current = true; setActiveTab('Order History'); setStatusFilter('backordered'); }}
+                        className="overflow-hidden rounded-xl bg-white shadow-sm border border-gray-200 p-5 cursor-pointer hover:border-orange-300 hover:ring-1 hover:ring-orange-300 transition group"
+                      >
+                        <dt className="truncate text-sm font-medium text-gray-500 uppercase tracking-wider group-hover:text-orange-600">Backordered</dt>
+                        <dd className="mt-1 text-3xl font-black tracking-tight text-gray-900">{analytics.kpis.backordered_count}</dd>
+                        <div className="mt-2 text-xs text-orange-600 font-semibold">Value: ₹{analytics.kpis.backordered_value.toLocaleString()}</div>
+                      </div>
+
+                      {/* Total Orders */}
+                      <div 
+                        onClick={() => { isDeepLink.current = true; setActiveTab('Order History'); setStatusFilter('all'); }}
+                        className="overflow-hidden rounded-xl bg-white shadow-sm border border-gray-200 p-5 cursor-pointer hover:border-indigo-300 hover:ring-1 hover:ring-indigo-300 transition group"
+                      >
+                        <dt className="truncate text-sm font-medium text-gray-500 uppercase tracking-wider group-hover:text-indigo-600">Total Orders Placed</dt>
+                        <dd className="mt-1 text-3xl font-black tracking-tight text-gray-900">{analytics.kpis.total_orders}</dd>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                    {/* Left: Recent POs Table (Span 2) */}
+                    <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden h-full">
+                      <div className="px-6 py-5 border-b border-gray-100 flex justify-between items-center bg-white">
+                        <h3 className="text-lg font-semibold text-gray-900">Recent Purchase Orders</h3>
+                        <button 
+                          onClick={() => setActiveTab('Submit PO')}
+                          className="text-sm bg-emerald-600 text-white px-4 py-2 rounded-md font-medium hover:bg-emerald-700 transition-colors shadow-sm"
+                        >
+                          + Create New PO
+                        </button>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-gray-50/50">
+                            <tr>
+                              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
+                              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">PO ID</th>
+                              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Value</th>
+                              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                              <th className="px-6 py-4 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Documents</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100 bg-white">
+                            {purchaseOrders.length === 0 ? (
+                              <tr><td colSpan={5} className="px-6 py-12 text-center text-gray-500">Your recent purchase orders will appear here.</td></tr>
+                            ) : (
+                              purchaseOrders.slice(0, 5).map((po) => {
+                                const isPOInvoiced = po.status === 'Invoiced';
+                                const displayTotal = isPOInvoiced ? po.total_amount * 1.18 : po.total_amount;
+                                
+                                return (
+                                  <tr 
+                                    key={po.id} 
+                                    className="hover:bg-gray-50 transition-colors"
                                   >
-                                    <DocumentTextIcon className="h-4 w-4" /> View PO
-                                  </button>
-                                  {po.status === 'Invoiced' && (
-                                    <button 
-                                      onClick={(e) => handleViewDocument(e, po.id, 'invoice')}
-                                      className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 px-3 py-1.5 rounded transition inline-flex items-center gap-1 text-sm font-medium"
-                                    >
-                                      <DocumentArrowDownIcon className="h-4 w-4" /> Invoice
-                                    </button>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                      {po.created_at ? new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(po.created_at)) : '--'}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">#{po.id}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                      <div className="text-sm font-semibold text-gray-900">
+                                        {po.total_amount ? `₹${displayTotal.toFixed(2)}` : '₹ --'}
+                                      </div>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                      <StatusBadge status={po.status} />
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap flex justify-center gap-3">
+                                      {po.status !== 'Backordered' && (
+                                        <button 
+                                          onClick={(e) => handleViewDocument(e, po.id, 'po')}
+                                          className="text-emerald-600 hover:text-emerald-900 bg-emerald-50 px-3 py-1.5 rounded transition inline-flex items-center gap-1 text-sm font-medium"
+                                        >
+                                          <DocumentTextIcon className="h-4 w-4" /> View PO
+                                        </button>
+                                      )}
+                                      {po.status === 'Backordered' && (
+                                        <p className="text-sm text-gray-500 italic">Backordered</p>
+                                      )}
+                                      {po.status === 'Invoiced' && (
+                                        <button 
+                                          onClick={(e) => handleViewDocument(e, po.id, 'invoice')}
+                                          className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 px-3 py-1.5 rounded transition inline-flex items-center gap-1 text-sm font-medium"
+                                        >
+                                          <DocumentArrowDownIcon className="h-4 w-4" /> Invoice
+                                        </button>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Right: Pie Chart (Span 1) */}
+                    {analytics && analytics.charts.top_items.length > 0 && (
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col h-full min-h-[300px]">
+                        <h3 className="text-base font-bold text-gray-900 mb-6">Most Purchased Items</h3>
+                        <div className="flex-1 w-full flex flex-col items-center justify-center">
+                          <div className="h-48 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Pie
+                                  data={analytics.charts.top_items}
+                                  innerRadius={50}
+                                  outerRadius={75}
+                                  paddingAngle={5}
+                                  dataKey="value"
+                                  stroke="none"
+                                >
+                                  {analytics.charts.top_items.map((entry: any, index: number) => (
+                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                  ))}
+                                </Pie>
+                                <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                              </PieChart>
+                            </ResponsiveContainer>
+                          </div>
+                          <div className="mt-4 flex flex-wrap justify-center gap-3">
+                            {analytics.charts.top_items.slice(0,3).map((entry: any, index: number) => (
+                              <div key={entry.name} className="flex items-center gap-1.5">
+                                <div className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
+                                <span className="text-xs font-semibold text-gray-700 truncate max-w-[100px]" title={entry.name}>{entry.name}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -905,7 +981,6 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
                         <span className="text-sm font-medium text-gray-500">Status:</span>
                         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="text-sm border border-gray-300 rounded-md py-1.5 pl-3 pr-8 focus:ring-emerald-500 focus:border-emerald-500 text-gray-700 bg-white shadow-sm">
                           <option value="all">All Orders</option>
-                          <option value="pending">Pending</option>
                           <option value="approved">Approved</option>
                           <option value="invoiced">Invoiced</option>
                           <option value="backordered">Backordered</option>
@@ -1112,7 +1187,7 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
                                       onClick={(e) => handleNotificationClick(e, notif, false)}
                                       className="text-xs bg-gray-50 text-gray-600 hover:bg-gray-100 px-3 py-1.5 rounded font-medium transition inline-flex items-center gap-1 border border-gray-200"
                                     >
-                                      Mark Read
+                                      Mark As Read
                                     </button>
                                   )}
                                 </td>

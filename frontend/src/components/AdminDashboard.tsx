@@ -1,6 +1,7 @@
 import React, { useState, useEffect, Fragment, useRef } from 'react';
 import { Disclosure, DisclosureButton, DisclosurePanel, Menu, MenuButton, MenuItem, MenuItems, Dialog, DialogPanel, DialogTitle, DialogBackdrop } from '@headlessui/react';
-import { Bars3Icon, BellIcon, XMarkIcon, MagnifyingGlassIcon, EllipsisVerticalIcon, DocumentTextIcon, DocumentArrowDownIcon, CheckCircleIcon, TrashIcon, UserIcon, ShieldCheckIcon, NoSymbolIcon, FunnelIcon, ArrowPathIcon, ClipboardDocumentListIcon, EyeIcon } from '@heroicons/react/24/outline';
+import { Bars3Icon, BellIcon, XMarkIcon, MagnifyingGlassIcon, EllipsisVerticalIcon, DocumentTextIcon, DocumentArrowDownIcon, CheckCircleIcon, TrashIcon, NoSymbolIcon, FunnelIcon, ArrowPathIcon, ClipboardDocumentListIcon, EyeIcon } from '@heroicons/react/24/outline';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
 
 const userNavigation = [
   { name: 'Your profile', href: '#' },
@@ -98,6 +99,9 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
   const [isDeleteCustomerModalOpen, setIsDeleteCustomerModalOpen] = useState(false);
   const [deleteCustomerError, setDeleteCustomerError] = useState('');
   const [isDeletingCustomer, setIsDeletingCustomer] = useState(false);
+
+  const [analytics, setAnalytics] = useState<any>(null);
+  const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']; 
 
   // --- NOTIFICATION STATES & HANDLERS ---
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -229,6 +233,8 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
         setAllPOs(sortedPOs);
         setRecentPOs(sortedPOs.slice(0, 3)); 
       }
+      const analyticsRes = await fetch("http://localhost:8000/admin/analytics", { headers: { Authorization: `Bearer ${token}` } });
+      if (analyticsRes.ok) setAnalytics(await analyticsRes.json());
     } catch (error) { console.error("Failed to fetch dashboard data:", error); } 
     finally { setLoading(false); }
   };
@@ -789,147 +795,279 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
             <>
               {/* --- DASHBOARD TAB --- */}
               {activeTab === 'Dashboard' && (
-                <div className="grid grid-cols-1 gap-6 items-start lg:grid-cols-3 lg:gap-8">
+                <div className="space-y-6">
                   
-                  {/* Left Card: Live Inventory */}
-                  <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                    <div className="px-6 py-5 border-b border-gray-100 flex justify-between items-center bg-white">
-                      <h3 className="text-lg font-semibold text-gray-900">Live Inventory</h3>
-                      <div className="flex items-center gap-3">
-                        <button 
-                          onClick={() => setActiveTab('Inventory')} 
-                          className="text-sm bg-indigo-100 text-indigo-600 px-4 py-2 rounded-md font-medium hover:bg-indigo-200 hover:text-indigo-800 transition-colors shadow-sm"
-                        >
-                          Manage
-                        </button>
-                        <button 
-                          onClick={() => { setActiveTab('Inventory'); setIsAddModalOpen(true); }}
-                          className="text-sm bg-indigo-600 text-white px-4 py-2 rounded-md font-medium hover:bg-indigo-700 transition-colors shadow-sm"
-                        >
-                          + Add Item
-                        </button>
+                  <div className="grid grid-cols-1 gap-6 items-start lg:grid-cols-3 lg:gap-8">
+                    {/* Left Card: Live Inventory */}
+                    <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                      <div className="px-6 py-5 border-b border-gray-100 flex justify-between items-center bg-white">
+                        <h3 className="text-lg font-semibold text-gray-900">Live Inventory</h3>
+                        <div className="flex items-center gap-3">
+                          <button 
+                            onClick={() => setActiveTab('Inventory')} 
+                            className="text-sm bg-indigo-100 text-indigo-600 px-4 py-2 rounded-md font-medium hover:bg-indigo-200 hover:text-indigo-800 transition-colors shadow-sm"
+                          >
+                            Manage
+                          </button>
+                          <button 
+                            onClick={() => { setActiveTab('Inventory'); setIsAddModalOpen(true); }}
+                            className="text-sm bg-indigo-600 text-white px-4 py-2 rounded-md font-medium hover:bg-indigo-700 transition-colors shadow-sm"
+                          >
+                            + Add Item
+                          </button>
+                        </div>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-gray-50/50">
+                            <tr>
+                              <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">
+                                <div className="text-gray-700">Item Code</div>
+                                <div className="mt-1 text-[11px] font-medium text-gray-400">Serial Code</div>
+                              </th>
+                              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
+                              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Price (₹)</th>
+                              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Stock</th>
+                              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100 bg-white">
+                            {filteredInventory.length === 0 ? (
+                              <tr><td colSpan={5} className="px-6 py-8 text-center text-gray-500">
+                                {searchQuery ? `No items match "${searchQuery}"` : 'No inventory items found.'}
+                              </td></tr>
+                            ) : (
+                              filteredInventory.slice(0, 5).map((item) => (
+                                <tr key={item.item_code} className="hover:bg-gray-50 transition-colors">
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                    <div className="text-sm font-bold text-gray-900">#{item.item_code}</div>
+                                    <div className="text-xs text-gray-500 uppercase tracking-wider">{item.serial_number || 'N/A'}</div>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-700">{item.item_name}</td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                    ₹{item.price ? item.price.toFixed(2) : '0.00'}
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-semibold">{item.quantity} Units</td>
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                    <StatusBadge status={item.quantity > 0 ? "In Stock" : "Out of Stock"} />
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
                       </div>
                     </div>
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50/50">
-                          <tr>
-                            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">
-                              <div className="text-gray-700">Item Code</div>
-                              <div className="mt-1 text-[11px] font-medium text-gray-400">Serial Code</div>
-                            </th>
-                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
-                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Price (₹)</th>
-                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Stock</th>
-                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 bg-white">
-                          {filteredInventory.length === 0 ? (
-                            <tr><td colSpan={5} className="px-6 py-8 text-center text-gray-500">
-                              {searchQuery ? `No items match "${searchQuery}"` : 'No inventory items found.'}
-                            </td></tr>
+
+                    {/* Right Card: Recent POs */}
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full">
+                      <div className="px-6 py-5 border-b border-gray-100 flex justify-between items-center bg-white">
+                        <h3 className="text-lg font-semibold text-gray-900">Recent POs</h3>
+                        <button onClick={() => setActiveTab('Purchase Orders')} className="text-sm font-medium text-indigo-600 hover:text-indigo-800">View all</button>
+                      </div>
+                      <div className="flex-1 overflow-y-auto">
+                        <ul className="divide-y divide-gray-100">
+                          {filteredRecentPOs.length === 0 ? (
+                            <li className="p-6 text-center text-gray-500 text-sm">
+                              {searchQuery ? `No orders match "${searchQuery}"` : 'No recent orders.'}
+                            </li>
                           ) : (
-                            filteredInventory.slice(0, 5).map((item) => (
-                              <tr key={item.item_code} className="hover:bg-gray-50 transition-colors">
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <div className="text-sm font-bold text-gray-900">#{item.item_code}</div>
-                                  <div className="text-xs text-gray-500 uppercase tracking-wider">{item.serial_number || 'N/A'}</div>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-700">{item.item_name}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                                  ₹{item.price ? item.price.toFixed(2) : '0.00'}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-semibold">{item.quantity} Units</td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <StatusBadge status={item.quantity > 0 ? "In Stock" : "Out of Stock"} />
-                                </td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+                            filteredRecentPOs.slice(0, 3).map((po) => {
+                              const isPOInvoiced = po.status === 'Invoiced';
+                              const displayTotal = isPOInvoiced ? po.total_amount * 1.18 : po.total_amount;
 
-                  {/* Right Card: Recent POs */}
-                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full">
-                    <div className="px-6 py-5 border-b border-gray-100 flex justify-between items-center bg-white">
-                      <h3 className="text-lg font-semibold text-gray-900">Recent POs</h3>
-                      <button onClick={() => setActiveTab('Purchase Orders')} className="text-sm font-medium text-indigo-600 hover:text-indigo-800">View all</button>
-                    </div>
-                    <div className="flex-1 overflow-y-auto">
-                      <ul className="divide-y divide-gray-100">
-                        {filteredRecentPOs.length === 0 ? (
-                          <li className="p-6 text-center text-gray-500 text-sm">
-                            {searchQuery ? `No orders match "${searchQuery}"` : 'No recent orders.'}
-                          </li>
-                        ) : (
-                          filteredRecentPOs.slice(0, 3).map((po) => {
-                            const isPOInvoiced = po.status === 'Invoiced';
-                            const displayTotal = isPOInvoiced ? po.total_amount * 1.18 : po.total_amount;
-
-                            return (
-                              <li key={po.id} className="p-6 hover:bg-gray-50 transition flex flex-col gap-2">
-                                <div className="flex justify-between items-center">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-bold text-gray-900">Order #{po.id}</span>
-                                    <span className="text-xs text-gray-400">
-                                      • {po.created_at ? new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(po.created_at)) : '--'}
-                                    </span>
+                              return (
+                                <li key={po.id} className="p-6 hover:bg-gray-50 transition flex flex-col gap-2">
+                                  <div className="flex justify-between items-center">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-bold text-gray-900">Order #{po.id}</span>
+                                      <span className="text-xs text-gray-400">
+                                        • {po.created_at ? new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(po.created_at)) : '--'}
+                                      </span>
+                                    </div>
+                                    <StatusBadge status={po.status} />
                                   </div>
-                                  <StatusBadge status={po.status} />
-                                </div>
 
-                                <div className="flex justify-between items-start text-sm mt-1">
-                                  <div>
-                                    <div className="font-bold text-gray-800">{po.organization_name || 'Individual Customer'}</div>
-                                    <div className="text-xs text-gray-500">{po.customer_name || `Customer #${po.customer_id}`}</div>
-                                  </div>
-                                  <div className="text-right">
-                                    <span className="font-black text-gray-900 text-base">
-                                      {po.total_amount ? `₹${displayTotal.toFixed(2)}` : '₹ --'}
-                                    </span>
-                                    <div className="text-[10px] text-gray-400 font-normal mt-0.5">
-                                      {isPOInvoiced ? 'Incl. of GST (18%)' : 'Excl. of GST'}
+                                  <div className="flex justify-between items-start text-sm mt-1">
+                                    <div>
+                                      <div className="font-bold text-gray-800">{po.organization_name || 'Individual Customer'}</div>
+                                      <div className="text-xs text-gray-500">{po.customer_name || `Customer #${po.customer_id}`}</div>
+                                    </div>
+                                    <div className="text-right">
+                                      <span className="font-black text-gray-900 text-base">
+                                        {po.total_amount ? `₹${displayTotal.toFixed(2)}` : '₹ --'}
+                                      </span>
+                                      <div className="text-[10px] text-gray-400 font-normal mt-0.5">
+                                        {isPOInvoiced ? 'Incl. of GST (18%)' : 'Excl. of GST'}
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
 
-                                <div className="flex justify-end gap-2 mt-2 pt-2 border-t border-gray-100">
-                                  <button 
-                                    onClick={(e) => handleViewDocument(e, po.id, 'po')}
-                                    className="text-emerald-600 hover:text-emerald-900 bg-emerald-50 px-3 py-1.5 rounded transition inline-flex items-center gap-1 text-xs font-medium"
-                                  >
-                                    <DocumentTextIcon className="h-3.5 w-3.5" /> View PO
-                                  </button>
-                                  
-                                  {po.status === 'Approved' && (
+                                  <div className="flex justify-end gap-2 mt-2 pt-2 border-t border-gray-100">
                                     <button 
-                                      onClick={(e) => handleGenerateInvoice(e, po.id)}
-                                      className="text-xs bg-emerald-600 text-white hover:bg-emerald-700 px-3 py-1.5 rounded font-bold transition shadow-sm border border-emerald-200"
+                                      onClick={(e) => handleViewDocument(e, po.id, 'po')}
+                                      className="text-emerald-600 hover:text-emerald-900 bg-emerald-50 px-3 py-1.5 rounded transition inline-flex items-center gap-1 text-xs font-medium"
                                     >
-                                      Generate Invoice
+                                      <DocumentTextIcon className="h-3.5 w-3.5" /> View PO
                                     </button>
-                                  )}
+                                    
+                                    {po.status === 'Approved' && (
+                                      <button 
+                                        onClick={(e) => handleGenerateInvoice(e, po.id)}
+                                        className="text-xs bg-emerald-600 text-white hover:bg-emerald-700 px-3 py-1.5 rounded font-bold transition shadow-sm border border-emerald-200"
+                                      >
+                                        Generate Invoice
+                                      </button>
+                                    )}
 
-                                  {po.status === 'Invoiced' && (
-                                    <button 
-                                      onClick={(e) => handleViewDocument(e, po.id, 'invoice')}
-                                      className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 px-3 py-1.5 rounded transition inline-flex items-center gap-1 text-xs font-medium"
-                                    >
-                                      <DocumentArrowDownIcon className="h-3.5 w-3.5" /> Invoice
-                                    </button>
-                                  )}
-                                </div>
-                              </li>
-                            );
-                          })
-                        )}
-                      </ul>
+                                    {po.status === 'Invoiced' && (
+                                      <button 
+                                        onClick={(e) => handleViewDocument(e, po.id, 'invoice')}
+                                        className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 px-3 py-1.5 rounded transition inline-flex items-center gap-1 text-xs font-medium"
+                                      >
+                                        <DocumentArrowDownIcon className="h-3.5 w-3.5" /> Invoice
+                                      </button>
+                                    )}
+                                  </div>
+                                </li>
+                              );
+                            })
+                          )}
+                        </ul>
+                      </div>
                     </div>
                   </div>
+                  
+                  {analytics && (
+                    <>
+                      {/* KPI CARDS */}
+                      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+                        {/* Revenue */}
+                        <div className="overflow-hidden rounded-xl bg-white shadow-sm border border-gray-200 p-5">
+                          <dt className="truncate text-sm font-medium text-gray-500 uppercase tracking-wider">YTD Revenue</dt>
+                          <dd className="mt-1 text-3xl font-black tracking-tight text-gray-900">₹{analytics.kpis.revenue_ytd.toLocaleString()}</dd>
+                          <div className="mt-2 text-xs text-indigo-600 font-semibold">MTD: ₹{analytics.kpis.revenue_mtd.toLocaleString()}</div>
+                        </div>
+                        
+                        {/* Pending POs */}
+                        <div 
+                          onClick={() => { isDeepLink.current = true; setActiveTab('Purchase Orders'); setStatusFilter('pending'); }}
+                          className="overflow-hidden rounded-xl bg-white shadow-sm border border-gray-200 p-5 cursor-pointer hover:border-orange-300 hover:ring-1 hover:ring-orange-300 transition group"
+                        >
+                          <dt className="truncate text-sm font-medium text-gray-500 uppercase tracking-wider group-hover:text-orange-600">Pending Approvals</dt>
+                          <dd className="mt-1 text-3xl font-black tracking-tight text-gray-900">{analytics.kpis.pending_count}</dd>
+                          <div className="mt-2 text-xs text-orange-600 font-semibold">Pipeline: ₹{analytics.kpis.pending_value.toLocaleString()}</div>
+                        </div>
 
+                        {/* Backordered POs */}
+                        <div 
+                          onClick={() => { isDeepLink.current = true; setActiveTab('Purchase Orders'); setStatusFilter('backordered'); }}
+                          className="overflow-hidden rounded-xl bg-white shadow-sm border border-gray-200 p-5 cursor-pointer hover:border-red-300 hover:ring-1 hover:ring-red-300 transition group"
+                        >
+                          <dt className="truncate text-sm font-medium text-gray-500 uppercase tracking-wider group-hover:text-red-600">Backordered</dt>
+                          <dd className="mt-1 text-3xl font-black tracking-tight text-gray-900">{analytics.kpis.backordered_count}</dd>
+                          <div className="mt-2 text-xs text-red-600 font-semibold">Pipeline: ₹{analytics.kpis.backordered_value.toLocaleString()}</div>
+                        </div>
+
+                        {/* Action Items */}
+                        <div className="overflow-hidden rounded-xl bg-white shadow-sm border border-gray-200 p-5 flex flex-col justify-between">
+                          <div 
+                            onClick={() => { isDeepLink.current = true; setActiveTab('Inventory'); setStatusFilter('out_of_stock'); }}
+                            className="flex justify-between items-center cursor-pointer group pb-2 border-b border-gray-100"
+                          >
+                            <span className="text-sm font-medium text-gray-500 uppercase tracking-wider group-hover:text-red-600">Low Stock Warnings</span>
+                            <span className="font-bold text-gray-900 group-hover:text-red-600">{analytics.kpis.low_stock_count} Items</span>
+                          </div>
+                          <div 
+                            onClick={() => { isDeepLink.current = true; setActiveTab('Manage Customers'); setStatusFilter('pending'); }}
+                            className="flex justify-between items-center cursor-pointer group pt-2"
+                          >
+                            <span className="text-sm font-medium text-gray-500 uppercase tracking-wider group-hover:text-indigo-600">Pending Users</span>
+                            <span className="font-bold text-gray-900 group-hover:text-indigo-600">{analytics.kpis.pending_customers} Users</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* CHARTS ROW 1 */}
+                      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                        {/* Revenue Trend */}
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                          <h3 className="text-base font-bold text-gray-900 mb-6">6-Month Revenue Trend (Invoiced)</h3>
+                          <div className="h-72 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <LineChart data={analytics.charts.trend} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280' }} dy={10} />
+                                <YAxis 
+                                  axisLine={false} 
+                                  tickLine={false} 
+                                  tick={{ fontSize: 12, fill: '#6b7280' }} 
+                                  tickFormatter={(value) => `₹${value >= 1000 ? (value/1000).toFixed(0) + 'k' : value}`} 
+                                />
+                                <Tooltip 
+                                  formatter={(value: any) => [`₹${Number(value).toLocaleString()}`, 'Revenue']}
+                                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                />
+                                <Line type="monotone" dataKey="revenue" stroke="#4f46e5" strokeWidth={3} dot={{ r: 4, fill: '#4f46e5', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+                              </LineChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+
+                        {/* Status Distribution */}
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                          <h3 className="text-base font-bold text-gray-900 mb-6">Order Status Distribution</h3>
+                          <div className="h-72 w-full flex items-center justify-center">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Pie
+                                  data={analytics.charts.status}
+                                  innerRadius={70}
+                                  outerRadius={100}
+                                  paddingAngle={5}
+                                  dataKey="value"
+                                  stroke="none"
+                                >
+                                  {analytics.charts.status.map((entry: any, index: number) => (
+                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                  ))}
+                                </Pie>
+                                <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                              </PieChart>
+                            </ResponsiveContainer>
+                            <div className="absolute flex flex-col gap-2">
+                              {analytics.charts.status.map((entry: any, index: number) => (
+                                <div key={entry.name} className="flex items-center gap-2">
+                                  <div className="h-3 w-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
+                                  <span className="text-xs font-semibold text-gray-700">{entry.name} ({entry.value})</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* CHARTS ROW 2 */}
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                        <h3 className="text-base font-bold text-gray-900 mb-6">Top 5 Fast-Moving Items</h3>
+                        <div className="h-72 w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={analytics.charts.top_items} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e5e7eb" />
+                              <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280' }} />
+                              <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#374151', fontWeight: 500 }} width={150} />
+                              <Tooltip 
+                                cursor={{fill: '#f3f4f6'}}
+                                formatter={(value: any) => [`${value} Units Sold`, 'Volume']}
+                                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                              />
+                              <Bar dataKey="value" fill="#10b981" radius={[0, 4, 4, 0]} barSize={24} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -1388,7 +1526,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                                       onClick={(e) => handleNotificationClick(e, notif, false)}
                                       className="text-xs bg-gray-50 text-gray-600 hover:bg-gray-100 px-3 py-1.5 rounded font-medium transition inline-flex items-center gap-1 border border-gray-200"
                                     >
-                                      Mark Read
+                                      Mark As Read
                                     </button>
                                   )}
                                 </td>
