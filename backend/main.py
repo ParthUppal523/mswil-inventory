@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import pdf_utils
 import logger_utils
 import os
+from datetime import datetime
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -383,9 +384,17 @@ def admin_generate_invoice(
     # Ensure invoices directory exists
     os.makedirs("invoices", exist_ok=True)
     inv_file = f"invoices/INV_{po.id}_{customer.username}.pdf"
+
+    # Meta information for the PDF 
+    meta_dict = {
+        "admin_name": f"{admin_user.first_name} {admin_user.last_name}".strip() or admin_user.username,
+        "buyer_name": f"{customer.first_name} {customer.last_name}".strip() or customer.username,
+        "invoice_date": datetime.now().strftime('%d-%b-%Y'),
+        "po_ref": str(po.id)
+    }
     
     # Generate the Invoice PDF
-    pdf_utils.generate_enterprise_pdf(inv_file, "TAX INVOICE", po.id, customer_dict, pdf_item_list, address_dict)
+    pdf_utils.generate_enterprise_pdf(inv_file, "TAX INVOICE", po.id, customer_dict, pdf_item_list, address_dict, meta_dict)
     
     # Update Status to Invoiced and Save
     po.status = "Invoiced"
@@ -509,11 +518,16 @@ def create_purchase_order(
         }
     
         po_file = f"purchase_orders/PO_{new_po.id}_{current_user.username}.pdf"
-        inv_file = f"invoices/INV_{new_po.id}_{current_user.username}.pdf"
+        # inv_file = f"invoices/INV_{new_po.id}_{current_user.username}.pdf"
+
+        # Meta information for the PDF
+        meta_dict = {
+            "buyer_name": f"{current_user.first_name} {current_user.last_name}".strip() or current_user.username,
+            "po_date": datetime.now().strftime('%d-%b-%Y')
+        }
     
         # Generate the PO and Tax Invoice by passing the list of items (pdf_item_list)
-        pdf_utils.generate_enterprise_pdf(po_file, "PURCHASE ORDER", new_po.id, customer_dict, pdf_item_list, address_dict)
-        # pdf_utils.generate_enterprise_pdf(inv_file, "TAX INVOICE", new_po.id, customer_dict, pdf_item_list, address_dict)
+        pdf_utils.generate_enterprise_pdf(po_file, "PURCHASE ORDER", new_po.id, customer_dict, pdf_item_list, address_dict, meta_dict)
     
     background_tasks.add_task(
         logger_utils.notify_admins, 
