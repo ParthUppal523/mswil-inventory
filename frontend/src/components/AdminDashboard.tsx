@@ -167,6 +167,53 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
   const [analytics, setAnalytics] = useState<any>(null);
   const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']; 
 
+  // --- BACKORDER MODAL STATES & HANDLERS ---
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [selectedBackorderPO, setSelectedBackorderPO] = useState<any>(null);
+  const [backorderItems, setBackorderItems] = useState<any[]>([]);
+  const [isApprovingBackorder, setIsApprovingBackorder] = useState(false);
+
+  const handleOpenReviewModal = async (po: any) => {
+    setSelectedBackorderPO(po);
+    setBackorderItems([]);
+    setIsReviewModalOpen(true);
+    
+    const token = localStorage.getItem("mswil_token");
+    try {
+      const res = await fetch(`http://localhost:8000/admin/purchase-orders/${po.id}/items`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setBackorderItems(await res.json());
+      }
+    } catch (error) {
+      console.error("Failed to fetch PO requirements", error);
+    }
+  };
+
+  const handleApproveBackorder = async () => {
+    setIsApprovingBackorder(true);
+    const token = localStorage.getItem("mswil_token");
+    try {
+      const res = await fetch(`http://localhost:8000/admin/purchase-orders/${selectedBackorderPO.id}/approve`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (res.ok) {
+        await fetchDashboardData(); // Refresh all tables
+        setIsReviewModalOpen(false);
+      } else {
+        const errorData = await res.json();
+        alert(errorData.detail || "Failed to approve backorder.");
+      }
+    } catch (error) {
+      alert("Network error occurred.");
+    } finally {
+      setIsApprovingBackorder(false);
+    }
+  };
+
   // --- BELL DROPDOWN STATE ---
   const [dropdownNotifications, setDropdownNotifications] = useState<any[]>([]);
   const unreadCount = dropdownNotifications.filter(n => !n.is_read).length;
@@ -842,7 +889,12 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
 
                                   <div className="flex justify-end gap-2 mt-2 pt-2 border-t border-gray-100">
                                     {po.status === 'Backordered' ? (
-                                      <span className="text-xs font-semibold text-orange-600 bg-orange-50 px-3 py-1.5 rounded inline-flex items-center">Awaiting Stock</span>
+                                      <button 
+                                        onClick={(e) => { e.stopPropagation(); handleOpenReviewModal(po); }}
+                                        className="text-xs font-bold text-orange-700 hover:bg-orange-100 bg-orange-50 border border-orange-200 px-3 py-1.5 rounded transition shadow-sm inline-flex items-center"
+                                      >
+                                        Review Backorder
+                                      </button>
                                     ) : (
                                       <button 
                                         onClick={(e) => handleViewDocument(e, po.id, 'po')}
@@ -1354,7 +1406,12 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                                 <td className="px-6 py-4 whitespace-nowrap flex justify-center gap-2">
                                   
                                   {po.status === 'Backordered' ? (
-                                    <span className="text-xs font-semibold text-orange-600 bg-orange-50 px-3 py-1.5 rounded inline-flex items-center">Awaiting Stock</span>
+                                    <button 
+                                      onClick={(e) => { e.stopPropagation(); handleOpenReviewModal(po); }}
+                                      className="text-xs font-bold text-orange-700 hover:bg-orange-100 bg-orange-50 border border-orange-200 px-3 py-1.5 rounded transition shadow-sm inline-flex items-center"
+                                    >
+                                      Review Backorder
+                                    </button>
                                   ) : (
                                     <button 
                                       onClick={(e) => handleViewDocument(e, po.id, 'po')}
@@ -1893,6 +1950,96 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                       {isDeletingCustomer ? 'Deleting...' : 'Yes, Permanently Delete'}
                     </button>
                     <button type="button" onClick={() => setIsDeleteCustomerModalOpen(false)} className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto">
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              )}
+            </DialogPanel>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* --- REVIEW BACKORDER MODAL --- */}
+      <Dialog open={isReviewModalOpen} onClose={() => setIsReviewModalOpen(false)} className="relative z-50">
+        <DialogBackdrop className="fixed inset-0 bg-black/30 backdrop-blur-sm transition-opacity" />
+        <div className="fixed inset-0 z-10 w-screen overflow-y-auto">
+          <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+            <DialogPanel className="relative transform overflow-hidden rounded-xl bg-white text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-3xl">
+              {selectedBackorderPO && (
+                <>
+                  <div className="bg-white px-4 pb-4 pt-5 sm:p-6 sm:pb-4">
+                    <div className="flex justify-between items-center mb-4">
+                      <DialogTitle as="h3" className="text-xl font-bold leading-6 text-gray-900">
+                        Review Requirements: PO #{selectedBackorderPO.id}
+                      </DialogTitle>
+                      <StatusBadge status="Backordered" />
+                    </div>
+                    
+                    <div className="mb-4 text-sm text-gray-600">
+                      <p><strong>Customer:</strong> {selectedBackorderPO.organization_name}</p>
+                      <p><strong>Total Value:</strong> ₹{selectedBackorderPO.total_amount?.toFixed(2)}</p>
+                    </div>
+
+                    <div className="border border-gray-200 rounded-lg overflow-hidden">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">Item Code</th>
+                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">Item Name</th>
+                            <th className="px-4 py-3 text-center text-xs font-bold text-gray-500 uppercase">Requested Qty</th>
+                            <th className="px-4 py-3 text-center text-xs font-bold text-gray-500 uppercase">Current Stock</th>
+                            <th className="px-4 py-3 text-center text-xs font-bold text-gray-500 uppercase">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 bg-white">
+                          {backorderItems.length === 0 ? (
+                            <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-500 animate-pulse">Fetching inventory logic...</td></tr>
+                          ) : (
+                            backorderItems.map((item, idx) => {
+                              const isDeficit = item.requested_quantity > item.current_stock;
+                              return (
+                                <tr key={idx} className={isDeficit ? "bg-red-50/30" : "bg-emerald-50/30"}>
+                                  <td className="px-4 py-3 text-sm font-bold text-gray-900">#{item.item_code}</td>
+                                  <td className="px-4 py-3 text-sm font-medium text-gray-700">{item.item_name}</td>
+                                  <td className="px-4 py-3 text-sm font-bold text-gray-900 text-center">{item.requested_quantity}</td>
+                                  <td className="px-4 py-3 text-sm font-bold text-gray-900 text-center">{item.current_stock}</td>
+                                  <td className="px-4 py-3 text-center">
+                                    {isDeficit ? (
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 uppercase">Deficit</span>
+                                    ) : (
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 uppercase">Sufficient</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    
+                    {backorderItems.length > 0 && backorderItems.some(i => i.requested_quantity > i.current_stock) && (
+                      <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700 font-medium">
+                        You cannot approve this order yet. Please restock the deficit items through the Inventory tab first.
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="bg-gray-50 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6 border-t border-gray-200">
+                    <button 
+                      type="button" 
+                      onClick={handleApproveBackorder} 
+                      disabled={isApprovingBackorder || backorderItems.length === 0 || backorderItems.some(i => i.requested_quantity > i.current_stock)} 
+                      className="inline-flex w-full justify-center rounded-md bg-emerald-600 px-3 py-2 text-sm font-bold text-white shadow-sm hover:bg-emerald-500 sm:ml-3 sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isApprovingBackorder ? 'Processing...' : 'Approve & Process Order'}
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => setIsReviewModalOpen(false)} 
+                      className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto"
+                    >
                       Cancel
                     </button>
                   </div>

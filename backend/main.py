@@ -483,6 +483,122 @@ def admin_generate_invoice(
     
     return po
 
+# Backorder Resolution Workflow
+@app.get("/admin/purchase-orders/{po_id}/items")
+def get_po_requirements(
+    po_id: int, 
+    db: Session = Depends(get_db), 
+    admin_user: models.User = Depends(auth_utils.get_current_admin)
+):
+    """Admin Workflow: Fetches the line items of a PO and compares them against current live stock."""
+    po_items = db.query(models.PurchaseOrderItem).filter(models.PurchaseOrderItem.po_id == po_id).all()
+    
+    result = []
+    for item in po_items:
+        # Join with Inventory to get live stock data
+        inv_item = db.query(models.InventoryItem).filter(models.InventoryItem.item_code == item.item_code).first()
+        
+        result.append({
+            "item_code": item.item_code,
+            "item_name": inv_item.item_name if inv_item else f"Item #{item.item_code}",
+            "requested_quantity": item.ordered_quantity,
+            "current_stock": inv_item.quantity if inv_item else 0,
+            "price": item.unit_price
+        })
+        
+    return result
+
+
+@app.put("/admin/purchase-orders/{po_id}/approve")
+def approve_backordered_po(
+    po_id: int, 
+    db: Session = Depends(get_db), 
+    admin_user: models.User = Depends(auth_utils.get_current_admin)
+):
+    """Resolves a backorder by verifying stock, deducting inventory, and generating the PDF."""
+    po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == po_id).first()
+    
+    if not po:
+        raise HTTPException(status_code=404, detail="Purchase Order not found.")
+    if po.status != "Backordered":
+        raise HTTPException(status_code=400, detail="The PO is already approved or invoiced.")
+
+    po_items = db.query(models.PurchaseOrderItem).filter(models.PurchaseOrderItem.po_id == po_id).all()
+    
+    # VERIFICATION PASS: Ensure sufficient stock exists for all items
+    for item in po_items:
+        inv_item = db.query(models.InventoryItem).filter(models.InventoryItem.item_code == item.item_code).first()
+        if not inv_item or inv_item.quantity < item.ordered_quantity:
+            available = inv_item.quantity if inv_item else 0
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Cannot approve. Insufficient stock for {inv_item.item_name if inv_item else 'Item #'+str(item.item_code)}. Required: {item.ordered_quantity}, Available: {available}"
+            )
+
+    # EXECUTION PASS: Safely deduct stock
+    for item in po_items:
+        inv_item = db.query(models.InventoryItem).filter(models.InventoryItem.item_code == item.item_code).first()
+        inv_item.quantity -= item.ordered_quantity
+    
+    # UPDATE PO STATUS
+    po.status = "Approved"
+    db.commit()
+
+    # GENERATE PDF
+    try:
+        # Reconstruct Customer & Address details for the PDF generator
+        customer = db.query(models.User).filter(models.User.id == po.customer_id).first()
+        profile = db.query(models.CustomerProfile).filter(models.CustomerProfile.user_id == customer.id).first() if customer else None
+        
+        customer_dict = {
+            "company": profile.organization_name if profile else customer.username,
+            "email": customer.email,
+            "gst_number": po.gst_number if po.gst_number else (profile.gst_number if profile else "")
+        }
+        
+        address_dict = {
+            "shipping": po.shipping_address,
+            "billing": po.billing_address
+        }
+
+        meta_dict = {
+            "buyer_name": f"{customer.first_name} {customer.last_name}".strip() or customer.username,
+            "po_date": po.created_at.strftime('%d-%b-%Y') if po.created_at else datetime.now().strftime('%d-%b-%Y')
+        }
+
+        pdf_item_list = []
+        for i in po_items:
+            inv_item = db.query(models.InventoryItem).filter(models.InventoryItem.item_code == i.item_code).first()
+            pdf_item_list.append({
+                "code": i.item_code, 
+                "name": inv_item.item_name if inv_item else f"Item #{i.item_code}", 
+                "quantity": i.ordered_quantity, 
+                "price": i.price_at_order
+            })
+
+        po_file = f"purchase_orders/PO_{po.id}_{customer.username}.pdf"
+        pdf_utils.generate_enterprise_pdf(po_file, "PURCHASE ORDER", po.id, customer_dict, pdf_item_list, address_dict, meta_dict)
+    except Exception as e:
+        print(f"PDF Generation failed during backorder approval: {e}")
+
+    # LOGGING & NOTIFICATIONS
+    new_log = models.AdminActivityLog(
+        admin_id=admin_user.id, 
+        admin_name=f"{admin_user.first_name} {admin_user.last_name}".strip() or admin_user.username,
+        admin_email=admin_user.email, action_type="APPROVE", entity_type="PurchaseOrder", entity_id=po.id,
+        changes={"status": {"old": "Backordered", "new": "Approved"}}
+    )
+    db.add(new_log)
+    
+    new_notif = models.Notification(
+        recipient_id=po.customer_id, title="Backorder PO Approved",
+        message=f"Stock has been successfully secured and your Purchase Order #{po.id} has been Approved."
+    )
+    db.add(new_notif)
+    db.commit()
+
+    return {"message": "Purchase Order approved, stock deducted, and PDF generated successfully."}
+
 @app.get("/admin/activity-logs")
 def get_activity_logs(
     skip: int = 0, 
