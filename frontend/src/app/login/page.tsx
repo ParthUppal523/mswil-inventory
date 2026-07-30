@@ -111,8 +111,9 @@ export default function Login() {
         <div className="absolute inset-0 bg-emerald-900 opacity-50 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPgo8cmVjdCB3aWR0aD0iOCIgaGVpZ2h0PSI4IiBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9IjAuMDUiLz4KPC9zdmc+')]"></div>
         <div className="relative z-10 text-center text-white">
           <div className="bg-white p-4 rounded-xl inline-block mb-8 shadow-2xl">
-             {/* Replace with your actual logo */}
-             <div className="h-16 w-16 bg-emerald-800 rounded-lg flex items-center justify-center font-black text-2xl"> <img src="/logo.png" alt="MSWIL Logo" className="h-full w-full object-contain" /> </div>
+             <div className="h-16 flex items-center justify-center"> 
+              <img src="/logo.png" alt="MSWIL Logo" className="h-full w-auto object-contain" /> 
+             </div>
           </div>
           <h1 className="text-4xl font-bold tracking-tight mb-4">MSWIL Enterprise Portal</h1>
           <p className="text-emerald-100 text-lg max-w-md mx-auto">

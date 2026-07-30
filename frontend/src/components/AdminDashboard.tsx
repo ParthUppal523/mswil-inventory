@@ -240,21 +240,41 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
     }
 
     if (directRoute) {
-      isDeepLink.current = true;
-      setStatusFilter('all'); setStartDate(''); setEndDate(''); setSortConfig('default'); setCurrentPage(1);
-
-      const idMatch = notif.message.match(/#(\d+)/);
+      const titleLower = notif.title.toLowerCase();
+      const idMatch = notif.message.match(/#(\d+)/) || notif.message.match(/(?:order|po|id)\s*#?\s*(\d+)/i);
       const extractedId = idMatch ? idMatch[1] : '';
 
-      if (notif.title.toLowerCase().includes("purchase order") || notif.title.toLowerCase().includes("invoice")) {
-        setActiveTab("Purchase Orders");
+      if (titleLower.includes("purchase order") || titleLower.includes("invoice") || titleLower.includes("backorder")) {
+        if (activeTab !== "Purchase Orders") {
+          isDeepLink.current = true;
+          setActiveTab("Purchase Orders");
+        }
+        
+        setStartDate(''); setEndDate(''); setSortConfig('default'); setCurrentPage(1);
+        
+        if (titleLower.includes("approved")) {
+          setStatusFilter('approved');
+        } else {
+          setStatusFilter('all');
+        }
+
         if (extractedId) { setSearchQuery(extractedId); setSearchScope('id'); }
-      } else if (notif.title.toLowerCase().includes("registration") || notif.title.toLowerCase().includes("account")) {
-        setActiveTab("Customers");
+        
+      } else if (titleLower.includes("registration") || titleLower.includes("account")) {
+        if (activeTab !== "Customers") {
+          isDeepLink.current = true;
+          setActiveTab("Customers");
+        }
+        
+        setStartDate(''); setEndDate(''); setSortConfig('default'); setCurrentPage(1);
+        setStatusFilter('all');
+        
         if (extractedId) { setSearchQuery(extractedId); setSearchScope('id'); }
       }
     }
   };
+
+  
 
   const handleMarkAllAsRead = async () => {
     const token = localStorage.getItem("mswil_token");
@@ -372,22 +392,25 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
   const handleLogDetailsNavigation = (e: React.MouseEvent, log: any) => {
     e.stopPropagation(); 
 
-    isDeepLink.current = true;
-    setStatusFilter('all');
-    setStartDate('');
-    setEndDate('');
-    setSortConfig('default');
-    setSearchQuery(log.entity_id.toString());
+    let targetTab = '';
+    if (log.entity_type === 'InventoryItem') targetTab = 'Inventory';
+    else if (log.entity_type === 'User') targetTab = 'Customers';
+    else if (log.entity_type === 'PurchaseOrder') targetTab = 'Purchase Orders';
 
-    if (log.entity_type === 'InventoryItem') {
-      setActiveTab('Inventory');
-      setSearchScope('code');
-    } else if (log.entity_type === 'User') {
-      setActiveTab('Customers');
-      setSearchScope('id');
-    } else if (log.entity_type === 'PurchaseOrder') {
-      setActiveTab('Purchase Orders');
-      setSearchScope('id');
+    if (targetTab) {
+      if (activeTab !== targetTab) {
+        isDeepLink.current = true;
+        setActiveTab(targetTab);
+      }
+      
+      setStatusFilter('all');
+      setStartDate('');
+      setEndDate('');
+      setSortConfig('default');
+      setSearchQuery(log.entity_id.toString());
+      
+      if (targetTab === 'Inventory') setSearchScope('code');
+      else setSearchScope('id');
     }
   };
 
@@ -530,8 +553,10 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="flex h-16 items-center justify-between">
               <div className="flex items-center">
-                <div className="shrink-0 bg-white p-0.5 rounded-md">
-                  <img alt="MSWIL Logo" src="/logo.png" className="size-8 rounded-md object-contain" />
+                <div className="bg-white p-2 rounded-lg inline-flex items-center justify-center shadow-md">
+                  <div className="h-8 w-8 flex items-center justify-center">
+                    <img src="/logo.png" alt="MSWIL Logo" className="h-full w-full object-contain" />
+                  </div>
                 </div>
                 <div className="hidden md:block">
                   <div className="ml-10 flex items-baseline space-x-4">
