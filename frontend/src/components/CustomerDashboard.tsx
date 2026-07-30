@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, Fragment } from 'react';
 import { Disclosure, DisclosureButton, DisclosurePanel, Menu, MenuButton, MenuItem, MenuItems, Listbox, ListboxButton, ListboxOption, ListboxOptions, Dialog, DialogPanel, DialogTitle, DialogBackdrop } from '@headlessui/react';
-import { Bars3Icon, BellIcon, XMarkIcon, MagnifyingGlassIcon, DocumentTextIcon, DocumentArrowDownIcon, TrashIcon, PlusIcon, ChevronUpDownIcon, FunnelIcon, ArrowPathIcon, EyeIcon } from '@heroicons/react/24/outline';
+import { Bars3Icon, BellIcon, XMarkIcon, MagnifyingGlassIcon, DocumentTextIcon, DocumentArrowDownIcon, TrashIcon, PlusIcon, ChevronUpDownIcon, FunnelIcon, ArrowPathIcon, EyeIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 
 const userNavigation = [
@@ -28,6 +28,62 @@ const StatusBadge = ({ status }: { status: string }) => {
   );
 };
 
+// Reusable Pagination Component
+const Pagination = ({ currentPage, totalItems, pageSize, onPageChange }: { currentPage: number, totalItems: number, pageSize: number, onPageChange: (page: number) => void }) => {
+  const totalPages = Math.ceil(totalItems / pageSize);
+  if (totalPages <= 1) return null;
+
+  return (
+    <div className="flex items-center justify-between border-t border-gray-200 bg-white px-4 py-3 sm:px-6">
+      <div className="flex flex-1 justify-between sm:hidden">
+        <button onClick={() => onPageChange(currentPage - 1)} disabled={currentPage === 1} className="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Previous</button>
+        <button onClick={() => onPageChange(currentPage + 1)} disabled={currentPage === totalPages} className="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Next</button>
+      </div>
+      <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm text-gray-700">
+            Showing <span className="font-medium">{(currentPage - 1) * pageSize + 1}</span> to <span className="font-medium">{Math.min(currentPage * pageSize, totalItems)}</span> of <span className="font-medium">{totalItems}</span> results
+          </p>
+        </div>
+        <div>
+          <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+            <button onClick={() => onPageChange(currentPage - 1)} disabled={currentPage === 1} className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50">
+              <span className="sr-only">Previous</span>
+              <ChevronLeftIcon className="h-5 w-5" aria-hidden="true" />
+            </button>
+            
+            {[...Array(totalPages)].map((_, idx) => {
+              const page = idx + 1;
+              const isCurrent = page === currentPage;
+              if (totalPages > 7 && (page < currentPage - 1 || page > currentPage + 1) && page !== 1 && page !== totalPages) {
+                if (page === currentPage - 2 || page === currentPage + 2) return <span key={page} className="relative inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 focus:outline-offset-0">...</span>;
+                return null;
+              }
+              return (
+                <button
+                  key={page}
+                  onClick={() => onPageChange(page)}
+                  className={classNames(
+                    isCurrent ? 'z-10 bg-emerald-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600' : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50',
+                    'relative inline-flex items-center px-4 py-2 text-sm font-semibold focus:z-20 focus:outline-offset-0'
+                  )}
+                >
+                  {page}
+                </button>
+              );
+            })}
+
+            <button onClick={() => onPageChange(currentPage + 1)} disabled={currentPage === totalPages} className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50">
+              <span className="sr-only">Next</span>
+              <ChevronRightIcon className="h-5 w-5" aria-hidden="true" />
+            </button>
+          </nav>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function CustomerDashboard({ handleLogout }: { handleLogout: () => void }) {
   // --- STATE MANAGEMENT ---
   const [activeTab, setActiveTab] = useState('Dashboard');
@@ -42,6 +98,11 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [sortConfig, setSortConfig] = useState('default');
+
+  // --- PAGINATION STATES ---
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
+  const pageSize = 50;
 
   // Deep Link Ref to prevent useEffect from wiping search instantly
   const isDeepLink = useRef(false);
@@ -63,12 +124,13 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
   const [poSubmitError, setPoSubmitError] = useState('');
 
   // --- NOTIFICATION STATES ---
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const unreadCount = notifications.filter(n => !n.is_read).length;
+  const [dropdownNotifications, setDropdownNotifications] = useState<any[]>([]);
+  const [tabNotifications, setTabNotifications] = useState<any[]>([]);
+  const unreadCount = dropdownNotifications.filter(n => !n.is_read).length;
 
   // --- ANALYTICS STATES ---
   const [analytics, setAnalytics] = useState<any>(null);
-  const COLORS = ['#059669', '#10b981', '#34d399', '#6ee7b7', '#a7f3d0']; // Emerald color palette for Customer Dashboard
+  const COLORS = ['#059669', '#10b981', '#34d399', '#6ee7b7', '#a7f3d0'];
 
   const navigation = [
     { name: 'Dashboard' },
@@ -89,7 +151,13 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
     setStartDate('');
     setEndDate('');
     setSortConfig('default');
+    setCurrentPage(1);
   }, [activeTab]);
+
+  // Reset page to 1 whenever a filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, searchScope, statusFilter, startDate, endDate, sortConfig]);
 
   const clearFilters = () => {
     setSearchQuery('');
@@ -98,6 +166,7 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
     setStartDate('');
     setEndDate('');
     setSortConfig('default');
+    setCurrentPage(1);
   };
 
   // --- DATA FETCHING ---
@@ -106,36 +175,66 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
     if (!token) return;
 
     try {
-      const poRes = await fetch("http://localhost:8000/purchase-orders", { headers: { Authorization: `Bearer ${token}` } });
-      if (poRes.ok) setPurchaseOrders((await poRes.json()).sort((a: any, b: any) => b.id - a.id));
+      const skip = (currentPage - 1) * pageSize;
+      const queryParams = `?skip=${skip}&limit=${pageSize}&search=${encodeURIComponent(searchQuery)}&search_scope=${searchScope}&status=${statusFilter}&start_date=${startDate}&end_date=${endDate}&sort_by=${sortConfig}`;
 
-      const invRes = await fetch("http://localhost:8000/inventory", { headers: { Authorization: `Bearer ${token}` } });
-      if (invRes.ok) setInventoryList(await invRes.json());
+      if (activeTab === 'Dashboard' || activeTab === 'Order History') {
+        const poRes = await fetch(`http://localhost:8000/purchase-orders${activeTab === 'Order History' ? queryParams : '?limit=5'}`, { headers: { Authorization: `Bearer ${token}` } });
+        if (poRes.ok) {
+          const poData = await poRes.json();
+          setPurchaseOrders(poData.data || poData);
+          if (activeTab === 'Order History') setTotalItems(poData.total || 0);
+        }
+      }
 
-      const analyticsRes = await fetch("http://localhost:8000/customer/analytics", { headers: { Authorization: `Bearer ${token}` } });
-      if (analyticsRes.ok) setAnalytics(await analyticsRes.json());
+      if (activeTab === 'Notifications') {
+        const notifRes = await fetch(`http://localhost:8000/notifications${queryParams}`, { headers: { Authorization: `Bearer ${token}` }});
+        if (notifRes.ok) {
+          const notifData = await notifRes.json();
+          setTabNotifications(notifData.data || notifData);
+          setTotalItems(notifData.total || 0);
+        }
+      }
+
+      // Always fetch full inventory for the cart dropdown
+      if (inventoryList.length === 0 || activeTab === 'Submit PO') {
+        const invRes = await fetch(`http://localhost:8000/inventory?limit=1000`, { headers: { Authorization: `Bearer ${token}` } });
+        if (invRes.ok) {
+          const invData = await invRes.json();
+          setInventoryList(invData.data || invData);
+        }
+      }
+
+      if (activeTab === 'Dashboard') {
+        const analyticsRes = await fetch("http://localhost:8000/customer/analytics", { headers: { Authorization: `Bearer ${token}` } });
+        if (analyticsRes.ok) setAnalytics(await analyticsRes.json());
+      }
       
     } catch (error) { console.error("Failed to fetch customer data:", error); } 
     finally { setLoading(false); }
   };
 
-  const fetchNotifications = async () => {
+  useEffect(() => {
+    fetchCustomerData();
+  }, [activeTab, currentPage, searchQuery, searchScope, statusFilter, startDate, endDate, sortConfig]);
+
+  const fetchDropdownNotifications = async () => {
     const token = localStorage.getItem("mswil_token");
     if (!token) return;
     try {
-      const res = await fetch("http://localhost:8000/notifications", { headers: { Authorization: `Bearer ${token}` } });
-      if (res.ok) setNotifications(await res.json());
+      const res = await fetch("http://localhost:8000/notifications?limit=50", { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) {
+        const data = await res.json();
+        setDropdownNotifications(data.data || data);
+      }
     } catch (error) { console.error("Failed to fetch notifications:", error); }
   };
 
-  // Initial fetch and 30-second polling for alerts
   useEffect(() => {
-    fetchCustomerData();
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 30000);
+    fetchDropdownNotifications();
+    const interval = setInterval(fetchDropdownNotifications, 30000);
     return () => clearInterval(interval);
   }, []);
-
 
   // --- NOTIFICATION HANDLERS ---
   const handleNotificationClick = async (e: React.MouseEvent, notif: any, directRoute: boolean = true) => {
@@ -149,7 +248,8 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
           method: "PUT",
           headers: { Authorization: `Bearer ${token}` }
         });
-        setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
+        setDropdownNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
+        setTabNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
       } catch (error) { console.error("Failed to mark notification read:", error); }
     }
 
@@ -160,6 +260,7 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
       setStartDate('');
       setEndDate('');
       setSortConfig('default');
+      setCurrentPage(1);
 
       // Regex to extract PO ID from string (e.g. "Purchase Order #5")
       const idMatch = notif.message.match(/#(\d+)/);
@@ -180,57 +281,10 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
     if (!token) return;
     try {
       await fetch("http://localhost:8000/notifications/read-all", { method: "PUT", headers: { Authorization: `Bearer ${token}` } });
-      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+      setDropdownNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+      setTabNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
     } catch (error) { console.error("Failed to mark all as read:", error); }
   };
-
-
-  // ==========================================
-  // SEARCH & FILTER ENGINE
-  // ==========================================
-  const applyPOFilters = (poList: any[]) => {
-    let result = poList.filter((po) => {
-      // Status Filter
-      if (statusFilter !== 'all' && po.status?.toLowerCase() !== statusFilter.toLowerCase()) return false;
-
-      // Text Search Filter
-      const q = searchQuery.toLowerCase().trim().replace('#', '');
-      let matchesSearch = true;
-
-      if (q) {
-        if (searchScope === 'id') matchesSearch = po.id?.toString() === q;
-        else matchesSearch = (po.id?.toString() === q || po.status?.toLowerCase().includes(q) || po.shipping_address?.toLowerCase().includes(q) || po.billing_address?.toLowerCase().includes(q));
-      }
-
-      let matchesDate = true;
-      if (po.created_at && (startDate || endDate)) {
-        const poDate = new Date(po.created_at).toISOString().split('T')[0];
-        if (startDate) matchesDate = matchesDate && (poDate >= startDate);
-        if (endDate) matchesDate = matchesDate && (poDate <= endDate);
-      }
-      return matchesSearch && matchesDate;
-    });
-
-    if (sortConfig === 'val_desc') result.sort((a, b) => (b.total_amount || 0) - (a.total_amount || 0));
-    else if (sortConfig === 'val_asc') result.sort((a, b) => (a.total_amount || 0) - (b.total_amount || 0));
-    
-    return result;
-  };
-
-  const filteredPOs = applyPOFilters(purchaseOrders);
-
-  const filteredNotifications = notifications.filter((notif) => {
-    if (statusFilter === 'unread' && notif.is_read) return false;
-    if (statusFilter === 'read' && !notif.is_read) return false;
-
-    let matchesDate = true;
-    if (notif.created_at && (startDate || endDate)) {
-      const notifDate = new Date(notif.created_at).toISOString().split('T')[0];
-      if (startDate) matchesDate = matchesDate && (notifDate >= startDate);
-      if (endDate) matchesDate = matchesDate && (notifDate <= endDate);
-    }
-    return matchesDate;
-  });
 
   // --- PDF DOCUMENT VIEWER ---
   const handleViewDocument = async (e: React.MouseEvent, poId: number, docType: 'po' | 'invoice') => {
@@ -420,12 +474,12 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
                       </div>
 
                       <div className="max-h-80 overflow-y-auto divide-y divide-gray-100">
-                        {notifications.length === 0 ? (
+                        {dropdownNotifications.length === 0 ? (
                           <div className="px-4 py-8 text-center text-xs text-gray-500 font-medium">
                             No notifications recorded yet.
                           </div>
                         ) : (
-                          notifications.map((n) => (
+                          dropdownNotifications.map((n) => (
                             <MenuItem key={n.id}>
                               {({ active }) => (
                                 <div
@@ -467,7 +521,7 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
                         )}
                       </div>
                       
-                      {/* VIEW ALL FOOTER */}
+                      {/* VIEW ALL NOTIFICATIONS FOOTER */}
                       <div className="p-2 border-t border-gray-100 bg-gray-50 text-center">
                         <button 
                           onClick={() => setActiveTab('Notifications')}
@@ -1028,12 +1082,12 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100 bg-white">
-                        {filteredPOs.length === 0 ? (
+                        {purchaseOrders.length === 0 ? (
                           <tr><td colSpan={7} className="px-6 py-12 text-center text-gray-500">
                             {searchQuery || startDate || endDate || statusFilter !== 'all' ? "No purchase orders match your criteria." : "No purchase orders recorded yet."}
                           </td></tr>
                         ) : (
-                          filteredPOs.map((po) => {
+                          purchaseOrders.map((po) => {
                             const isExpanded = expandedRow === po.id;
                             const isPOInvoiced = po.status === 'Invoiced';
                             const displayTotal = isPOInvoiced ? po.total_amount * 1.18 : po.total_amount;
@@ -1066,12 +1120,17 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
                                   <StatusBadge status={po.status} />
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap flex justify-center gap-3">
-                                  <button 
-                                    onClick={(e) => handleViewDocument(e, po.id, 'po')}
-                                    className="text-emerald-600 hover:text-emerald-900 bg-emerald-50 px-3 py-1.5 rounded transition inline-flex items-center gap-1 text-sm font-medium"
-                                  >
-                                    <DocumentTextIcon className="h-4 w-4" /> View PO
-                                  </button>
+                                  {po.status !== 'Backordered' && (
+                                    <button 
+                                      onClick={(e) => handleViewDocument(e, po.id, 'po')}
+                                      className="text-emerald-600 hover:text-emerald-900 bg-emerald-50 px-3 py-1.5 rounded transition inline-flex items-center gap-1 text-sm font-medium"
+                                    >
+                                      <DocumentTextIcon className="h-4 w-4" /> View PO
+                                    </button>
+                                  )}
+                                  {po.status === 'Backordered' && (
+                                    <p className="text-sm text-gray-500 italic">Backordered</p>
+                                  )}
                                   {po.status === 'Invoiced' && (
                                     <button 
                                       onClick={(e) => handleViewDocument(e, po.id, 'invoice')}
@@ -1088,6 +1147,15 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
                       </tbody>
                     </table>
                   </div>
+
+                  {/* PO PAGINATION */}
+                  <Pagination 
+                    currentPage={currentPage} 
+                    totalItems={totalItems} 
+                    pageSize={pageSize} 
+                    onPageChange={setCurrentPage} 
+                  />
+
                 </div>
               )}
 
@@ -1146,12 +1214,12 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100 bg-white">
-                        {filteredNotifications.length === 0 ? (
+                        {tabNotifications.length === 0 ? (
                           <tr><td colSpan={5} className="px-6 py-12 text-center text-gray-500">
                             {startDate || endDate || statusFilter !== 'all' ? "No notifications match your filters." : "No notifications recorded yet."}
                           </td></tr>
                         ) : (
-                          filteredNotifications.map((notif) => {
+                          tabNotifications.map((notif) => {
                             return (
                               <tr key={notif.id} className="hover:bg-gray-50 transition-colors">
                                 <td className="px-6 py-4 whitespace-nowrap">
@@ -1187,7 +1255,7 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
                                       onClick={(e) => handleNotificationClick(e, notif, false)}
                                       className="text-xs bg-gray-50 text-gray-600 hover:bg-gray-100 px-3 py-1.5 rounded font-medium transition inline-flex items-center gap-1 border border-gray-200"
                                     >
-                                      Mark As Read
+                                      Mark Read
                                     </button>
                                   )}
                                 </td>
@@ -1198,6 +1266,15 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
                       </tbody>
                     </table>
                   </div>
+                  
+                  {/* NOTIFICATIONS PAGINATION */}
+                  <Pagination 
+                    currentPage={currentPage} 
+                    totalItems={totalItems} 
+                    pageSize={pageSize} 
+                    onPageChange={setCurrentPage} 
+                  />
+
                 </div>
               )}
             </>

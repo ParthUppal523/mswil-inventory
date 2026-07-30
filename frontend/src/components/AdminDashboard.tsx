@@ -1,6 +1,6 @@
 import React, { useState, useEffect, Fragment, useRef } from 'react';
 import { Disclosure, DisclosureButton, DisclosurePanel, Menu, MenuButton, MenuItem, MenuItems, Dialog, DialogPanel, DialogTitle, DialogBackdrop } from '@headlessui/react';
-import { Bars3Icon, BellIcon, XMarkIcon, MagnifyingGlassIcon, EllipsisVerticalIcon, DocumentTextIcon, DocumentArrowDownIcon, CheckCircleIcon, TrashIcon, NoSymbolIcon, FunnelIcon, ArrowPathIcon, ClipboardDocumentListIcon, EyeIcon } from '@heroicons/react/24/outline';
+import { Bars3Icon, BellIcon, XMarkIcon, MagnifyingGlassIcon, EllipsisVerticalIcon, DocumentTextIcon, DocumentArrowDownIcon, CheckCircleIcon, TrashIcon, NoSymbolIcon, FunnelIcon, ArrowPathIcon, ClipboardDocumentListIcon, EyeIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
 
 const userNavigation = [
@@ -47,12 +47,71 @@ const ActionBadge = ({ action }: { action: string }) => {
   );
 };
 
+// Reusable Pagination Component
+const Pagination = ({ currentPage, totalItems, pageSize, onPageChange }: { currentPage: number, totalItems: number, pageSize: number, onPageChange: (page: number) => void }) => {
+  const totalPages = Math.ceil(totalItems / pageSize);
+  if (totalPages <= 1) return null;
+
+  return (
+    <div className="flex items-center justify-between border-t border-gray-200 bg-white px-4 py-3 sm:px-6">
+      <div className="flex flex-1 justify-between sm:hidden">
+        <button onClick={() => onPageChange(currentPage - 1)} disabled={currentPage === 1} className="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Previous</button>
+        <button onClick={() => onPageChange(currentPage + 1)} disabled={currentPage === totalPages} className="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Next</button>
+      </div>
+      <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm text-gray-700">
+            Showing <span className="font-medium">{(currentPage - 1) * pageSize + 1}</span> to <span className="font-medium">{Math.min(currentPage * pageSize, totalItems)}</span> of <span className="font-medium">{totalItems}</span> results
+          </p>
+        </div>
+        <div>
+          <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+            <button onClick={() => onPageChange(currentPage - 1)} disabled={currentPage === 1} className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50">
+              <span className="sr-only">Previous</span>
+              <ChevronLeftIcon className="h-5 w-5" aria-hidden="true" />
+            </button>
+            
+            {/* Generate Page Numbers */}
+            {[...Array(totalPages)].map((_, idx) => {
+              const page = idx + 1;
+              const isCurrent = page === currentPage;
+              // Simple ellipsis logic for many pages
+              if (totalPages > 7 && (page < currentPage - 1 || page > currentPage + 1) && page !== 1 && page !== totalPages) {
+                if (page === currentPage - 2 || page === currentPage + 2) return <span key={page} className="relative inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 focus:outline-offset-0">...</span>;
+                return null;
+              }
+              return (
+                <button
+                  key={page}
+                  onClick={() => onPageChange(page)}
+                  className={classNames(
+                    isCurrent ? 'z-10 bg-indigo-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600' : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50',
+                    'relative inline-flex items-center px-4 py-2 text-sm font-semibold focus:z-20 focus:outline-offset-0'
+                  )}
+                >
+                  {page}
+                </button>
+              );
+            })}
+
+            <button onClick={() => onPageChange(currentPage + 1)} disabled={currentPage === totalPages} className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50">
+              <span className="sr-only">Next</span>
+              <ChevronRightIcon className="h-5 w-5" aria-hidden="true" />
+            </button>
+          </nav>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function AdminDashboard({ handleLogout }: { handleLogout: () => void }) {
   const [inventory, setInventory] = useState<any[]>([]);
   const [recentPOs, setRecentPOs] = useState<any[]>([]);
   const [allPOs, setAllPOs] = useState<any[]>([]);
   const [customersList, setCustomersList] = useState<any[]>([]); 
   const [activityLogs, setActivityLogs] = useState<any[]>([]); 
+  const [tabNotifications, setTabNotifications] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
 
   const [activeTab, setActiveTab] = useState('Dashboard');
@@ -67,6 +126,11 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
   const [endDate, setEndDate] = useState('');
   const [sortConfig, setSortConfig] = useState('default');
 
+  // --- PAGINATION STATES ---
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
+  const pageSize = 50; // Items per page
+
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [expandedPoRow, setExpandedPoRow] = useState<number | null>(null);
   const [expandedLogRow, setExpandedLogRow] = useState<number | null>(null);
@@ -74,7 +138,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
   const navigation = [
     { name: 'Dashboard' },
     { name: 'Inventory' },
-    { name: 'Manage Customers' },
+    { name: 'Customers' },
     { name: 'Purchase Orders' },
     { name: 'Notifications' },
     { name: 'Activity History' },
@@ -103,67 +167,44 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
   const [analytics, setAnalytics] = useState<any>(null);
   const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']; 
 
-  // --- NOTIFICATION STATES & HANDLERS ---
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const unreadCount = notifications.filter(n => !n.is_read).length;
+  // --- BELL DROPDOWN STATE ---
+  const [dropdownNotifications, setDropdownNotifications] = useState<any[]>([]);
+  const unreadCount = dropdownNotifications.filter(n => !n.is_read).length;
 
-  const fetchNotifications = async () => {
+  const fetchDropdownNotifications = async () => {
     const token = localStorage.getItem("mswil_token");
     if (!token) return;
-
     try {
-      const res = await fetch("http://localhost:8000/notifications", {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) {
-        setNotifications(await res.json());
-      }
-    } catch (error) {
-      console.error("Failed to fetch notifications:", error);
-    }
+      const res = await fetch("http://localhost:8000/notifications?limit=50", { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) setDropdownNotifications((await res.json()).data || []);
+    } catch (error) { console.error("Failed to fetch notifications:", error); }
   };
 
   const handleNotificationClick = async (e: React.MouseEvent, notif: any, directRoute: boolean = true) => {
     e.stopPropagation();
     const token = localStorage.getItem("mswil_token");
     
-    // Mark as read in backend if unread
     if (!notif.is_read && token) {
       try {
-        await fetch(`http://localhost:8000/notifications/${notif.id}/read`, {
-          method: "PUT",
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
-      } catch (error) {
-        console.error("Failed to mark notification as read:", error);
-      }
+        await fetch(`http://localhost:8000/notifications/${notif.id}/read`, { method: "PUT", headers: { Authorization: `Bearer ${token}` } });
+        setDropdownNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
+        setTabNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
+      } catch (error) {}
     }
 
-    // Perform Deep Routing
     if (directRoute) {
       isDeepLink.current = true;
-      setStatusFilter('all');
-      setStartDate('');
-      setEndDate('');
-      setSortConfig('default');
+      setStatusFilter('all'); setStartDate(''); setEndDate(''); setSortConfig('default'); setCurrentPage(1);
 
-      // Regex to extract the entity ID from the notification text (e.g., matching "#5")
       const idMatch = notif.message.match(/#(\d+)/);
       const extractedId = idMatch ? idMatch[1] : '';
 
       if (notif.title.toLowerCase().includes("purchase order") || notif.title.toLowerCase().includes("invoice")) {
         setActiveTab("Purchase Orders");
-        if (extractedId) {
-          setSearchQuery(extractedId);
-          setSearchScope('id');
-        }
+        if (extractedId) { setSearchQuery(extractedId); setSearchScope('id'); }
       } else if (notif.title.toLowerCase().includes("registration") || notif.title.toLowerCase().includes("account")) {
-        setActiveTab("Manage Customers");
-        if (extractedId) {
-          setSearchQuery(extractedId);
-          setSearchScope('id');
-        }
+        setActiveTab("Customers");
+        if (extractedId) { setSearchQuery(extractedId); setSearchScope('id'); }
       }
     }
   };
@@ -171,16 +212,11 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
   const handleMarkAllAsRead = async () => {
     const token = localStorage.getItem("mswil_token");
     if (!token) return;
-
     try {
-      await fetch("http://localhost:8000/notifications/read-all", {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-    } catch (error) {
-      console.error("Failed to mark all notifications as read:", error);
-    }
+      await fetch("http://localhost:8000/notifications/read-all", { method: "PUT", headers: { Authorization: `Bearer ${token}` } });
+      setDropdownNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+      setTabNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    } catch (error) {}
   };
 
   // Reset Filters when switching tabs
@@ -189,190 +225,101 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
       isDeepLink.current = false;
       return;
     }
-    setSearchQuery('');
-    setSearchScope('all');
-    setStatusFilter('all');
-    setStartDate('');
-    setEndDate('');
-    setSortConfig('default');
+    setSearchQuery(''); setSearchScope('all'); setStatusFilter('all'); setStartDate(''); setEndDate(''); setSortConfig('default'); setCurrentPage(1);
   }, [activeTab]);
 
+  // Reset page to 1 whenever a filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, searchScope, statusFilter, startDate, endDate, sortConfig]);
+
   const clearFilters = () => {
-    setSearchQuery('');
-    setSearchScope('all');
-    setStatusFilter('all');
-    setStartDate('');
-    setEndDate('');
-    setSortConfig('default');
+    setSearchQuery(''); setSearchScope('all'); setStatusFilter('all'); setStartDate(''); setEndDate(''); setSortConfig('default'); setCurrentPage(1);
   };
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
       if (!target.closest('tr')) {
-        setExpandedRow(null);
-        setExpandedPoRow(null);
-        setExpandedLogRow(null);
+        setExpandedRow(null); setExpandedPoRow(null); setExpandedLogRow(null);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // --- DATA FETCHING ---
   const fetchDashboardData = async () => {
     const token = localStorage.getItem("mswil_token");
     if (!token) return;
 
     try {
-      const invRes = await fetch("http://localhost:8000/inventory", { headers: { Authorization: `Bearer ${token}` }});
-      if (invRes.ok) setInventory((await invRes.json()).sort((a: any, b: any) => a.item_code - b.item_code));
+      const skip = (currentPage - 1) * pageSize;
+      const queryParams = `?skip=${skip}&limit=${pageSize}&search=${encodeURIComponent(searchQuery)}&search_scope=${searchScope}&status=${statusFilter}&start_date=${startDate}&end_date=${endDate}&sort_by=${sortConfig}`;
 
-      const poRes = await fetch("http://localhost:8000/purchase-orders", { headers: { Authorization: `Bearer ${token}` }});
-      if (poRes.ok) {
-        const sortedPOs = (await poRes.json()).sort((a: any, b: any) => b.id - a.id);
-        setAllPOs(sortedPOs);
-        setRecentPOs(sortedPOs.slice(0, 3)); 
+      if (activeTab === 'Dashboard' || activeTab === 'Inventory') {
+        const invRes = await fetch(`http://localhost:8000/inventory${activeTab === 'Inventory' ? queryParams : ''}`, { headers: { Authorization: `Bearer ${token}` }});
+        if (invRes.ok) {
+          const invData = await invRes.json();
+          setInventory(invData.data || invData); 
+          if (activeTab === 'Inventory') setTotalItems(invData.total || 0);
+        }
       }
-      const analyticsRes = await fetch("http://localhost:8000/admin/analytics", { headers: { Authorization: `Bearer ${token}` } });
-      if (analyticsRes.ok) setAnalytics(await analyticsRes.json());
+
+      if (activeTab === 'Dashboard' || activeTab === 'Purchase Orders') {
+        const poRes = await fetch(`http://localhost:8000/purchase-orders${activeTab === 'Purchase Orders' ? queryParams : ''}`, { headers: { Authorization: `Bearer ${token}` }});
+        if (poRes.ok) {
+          const poData = await poRes.json();
+          setAllPOs(poData.data || poData);
+          if (activeTab === 'Purchase Orders') setTotalItems(poData.total || 0);
+          if (activeTab === 'Dashboard') setRecentPOs((poData.data || poData).slice(0, 3)); 
+        }
+      }
+
+      if (activeTab === 'Customers') {
+        const cRes = await fetch(`http://localhost:8000/admin/customers${queryParams}`, { headers: { Authorization: `Bearer ${token}` }});
+        if (cRes.ok) {
+          const cData = await cRes.json();
+          setCustomersList(cData.data || cData);
+          setTotalItems(cData.total || 0);
+        }
+      }
+
+      if (activeTab === 'Activity History') {
+        const logRes = await fetch(`http://localhost:8000/admin/activity-logs${queryParams}`, { headers: { Authorization: `Bearer ${token}` }});
+        if (logRes.ok) {
+          const logData = await logRes.json();
+          setActivityLogs(logData.data || logData);
+          setTotalItems(logData.total || 0);
+        }
+      }
+
+      if (activeTab === 'Notifications') {
+        const notifRes = await fetch(`http://localhost:8000/notifications${queryParams}`, { headers: { Authorization: `Bearer ${token}` }});
+        if (notifRes.ok) {
+          const notifData = await notifRes.json();
+          setTabNotifications(notifData.data || notifData);
+          setTotalItems(notifData.total || 0);
+        }
+      }
+
+      if (activeTab === 'Dashboard') {
+        const analyticsRes = await fetch("http://localhost:8000/admin/analytics", { headers: { Authorization: `Bearer ${token}` } });
+        if (analyticsRes.ok) setAnalytics(await analyticsRes.json());
+      }
     } catch (error) { console.error("Failed to fetch dashboard data:", error); } 
     finally { setLoading(false); }
   };
 
-  // Fetch initial notifications and set up polling
   useEffect(() => {
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 30000);
+    fetchDashboardData();
+  }, [activeTab, currentPage, searchQuery, searchScope, statusFilter, startDate, endDate, sortConfig]);
+
+  useEffect(() => {
+    fetchDropdownNotifications();
+    const interval = setInterval(fetchDropdownNotifications, 30000);
     return () => clearInterval(interval);
   }, []);
-
-  const fetchCustomers = async () => {
-    const token = localStorage.getItem("mswil_token");
-    if (!token) return;
-    try {
-      const res = await fetch("http://localhost:8000/admin/customers", { headers: { Authorization: `Bearer ${token}` }});
-      if (res.ok) setCustomersList(await res.json());
-    } catch (error) { console.error("Failed to fetch customers:", error); }
-  };
-
-  const fetchActivityLogs = async () => {
-    const token = localStorage.getItem("mswil_token");
-    if (!token) return;
-    try {
-      const res = await fetch("http://localhost:8000/admin/activity-logs", { headers: { Authorization: `Bearer ${token}` }});
-      if (res.ok) setActivityLogs(await res.json());
-    } catch (error) { console.error("Failed to fetch logs:", error); }
-  };
-
-  useEffect(() => { fetchDashboardData(); }, []);
-
-  useEffect(() => {
-    if (activeTab === 'Manage Customers') fetchCustomers();
-    if (activeTab === 'Activity History') fetchActivityLogs();
-  }, [activeTab]);
-
-
-  // ==========================================
-  // SEARCH & FILTER ENGINE
-  // ==========================================
-
-  const filteredInventory = inventory.filter((item) => {
-    if (statusFilter === 'in_stock' && item.quantity <= 0) return false;
-    if (statusFilter === 'out_of_stock' && item.quantity > 0) return false;
-
-    const q = searchQuery.toLowerCase().trim().replace('#', '');
-    if (!q) return true;
-
-    if (searchScope === 'code') return item.item_code?.toString() === q;
-    if (searchScope === 'name') return item.item_name?.toLowerCase().includes(q) || item.description?.toLowerCase().includes(q);
-    
-    return (item.item_code?.toString() === q || item.serial_number?.toLowerCase().includes(q) || item.item_name?.toLowerCase().includes(q));
-  });
-
-  let filteredCustomers = customersList.filter((c) => {
-    if (statusFilter === 'approved' && !c.is_approved) return false;
-    if (statusFilter === 'pending' && c.is_approved) return false;
-
-    const q = searchQuery.toLowerCase().trim().replace('#', '');
-    if (!q) return true;
-
-    if (searchScope === 'id') return c.id?.toString() === q;
-    if (searchScope === 'name') return c.name?.toLowerCase().includes(q);
-    if (searchScope === 'org') return c.organization?.toLowerCase().includes(q);
-    if (searchScope === 'email') return c.email?.toLowerCase().includes(q);
-
-    return (c.id?.toString() === q || c.name?.toLowerCase().includes(q) || c.organization?.toLowerCase().includes(q) || c.email?.toLowerCase().includes(q));
-  });
-
-  if (sortConfig === 'org_asc') filteredCustomers.sort((a, b) => (a.organization || '').localeCompare(b.organization || ''));
-  else if (sortConfig === 'org_desc') filteredCustomers.sort((a, b) => (b.organization || '').localeCompare(a.organization || ''));
-
-  const applyPOFilters = (poList: any[]) => {
-    let result = poList.filter((po) => {
-      if (statusFilter !== 'all' && po.status?.toLowerCase() !== statusFilter.toLowerCase()) return false;
-
-      const q = searchQuery.toLowerCase().trim().replace('#', '');
-      let matchesSearch = true;
-
-      if (q) {
-        if (searchScope === 'id') matchesSearch = po.id?.toString() === q;
-        else if (searchScope === 'org') matchesSearch = po.organization_name?.toLowerCase().includes(q);
-        else if (searchScope === 'name') matchesSearch = po.customer_name?.toLowerCase().includes(q);
-        else if (searchScope === 'admin') matchesSearch = po.invoiced_by_name?.toLowerCase().includes(q);
-        else matchesSearch = (po.id?.toString() === q || po.organization_name?.toLowerCase().includes(q) || po.customer_name?.toLowerCase().includes(q) || po.status?.toLowerCase().includes(q) || po.invoiced_by_name?.toLowerCase().includes(q));
-      }
-
-      let matchesDate = true;
-      if (po.created_at && (startDate || endDate)) {
-        const poDate = new Date(po.created_at).toISOString().split('T')[0];
-        if (startDate) matchesDate = matchesDate && (poDate >= startDate);
-        if (endDate) matchesDate = matchesDate && (poDate <= endDate);
-      }
-      return matchesSearch && matchesDate;
-    });
-
-    if (sortConfig === 'org_asc') result.sort((a, b) => (a.organization_name || '').localeCompare(b.organization_name || ''));
-    else if (sortConfig === 'org_desc') result.sort((a, b) => (b.organization_name || '').localeCompare(a.organization_name || ''));
-    
-    return result;
-  };
-
-  const filteredPOs = applyPOFilters(allPOs);
-  const filteredRecentPOs = applyPOFilters(recentPOs);
-
-  const filteredLogs = activityLogs.filter((log) => {
-    if (statusFilter !== 'all' && log.action_type?.toLowerCase() !== statusFilter.toLowerCase()) return false;
-
-    const q = searchQuery.toLowerCase().trim().replace('#', '');
-    let matchesSearch = true;
-
-    if (q) {
-      if (searchScope === 'admin') matchesSearch = log.admin_name?.toLowerCase().includes(q) || log.admin_email?.toLowerCase().includes(q);
-      else if (searchScope === 'entity') matchesSearch = log.entity_type?.toLowerCase().includes(q) || log.entity_id?.toString().toLowerCase().includes(q);
-      else matchesSearch = (log.admin_name?.toLowerCase().includes(q) || log.entity_type?.toLowerCase().includes(q) || log.entity_id?.toString().toLowerCase().includes(q));
-    }
-
-    let matchesDate = true;
-    if (log.timestamp && (startDate || endDate)) {
-      const logDate = new Date(log.timestamp).toISOString().split('T')[0];
-      if (startDate) matchesDate = matchesDate && (logDate >= startDate);
-      if (endDate) matchesDate = matchesDate && (logDate <= endDate);
-    }
-    return matchesSearch && matchesDate;
-  });
-
-  const filteredNotifications = notifications.filter((notif) => {
-    if (statusFilter === 'unread' && notif.is_read) return false;
-    if (statusFilter === 'read' && !notif.is_read) return false;
-
-    let matchesDate = true;
-    if (notif.created_at && (startDate || endDate)) {
-      const notifDate = new Date(notif.created_at).toISOString().split('T')[0];
-      if (startDate) matchesDate = matchesDate && (notifDate >= startDate);
-      if (endDate) matchesDate = matchesDate && (notifDate <= endDate);
-    }
-    return matchesDate;
-  });
 
   // --- LOG DEEP LINK NAVIGATION HANDLER ---
   const handleLogDetailsNavigation = (e: React.MouseEvent, log: any) => {
@@ -389,7 +336,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
       setActiveTab('Inventory');
       setSearchScope('code');
     } else if (log.entity_type === 'User') {
-      setActiveTab('Manage Customers');
+      setActiveTab('Customers');
       setSearchScope('id');
     } else if (log.entity_type === 'PurchaseOrder') {
       setActiveTab('Purchase Orders');
@@ -397,13 +344,12 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
     }
   };
 
-
   // --- HANDLERS ---
   const handleApproveUser = async (userId: number) => {
     const token = localStorage.getItem("mswil_token");
     try {
       const res = await fetch(`http://localhost:8000/admin/approve-user/${userId}`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` }});
-      if (res.ok) fetchCustomers();
+      if (res.ok) fetchDashboardData();
       else alert((await res.json()).detail || "Failed to approve customer.");
     } catch (error) { alert("Network error."); }
   };
@@ -413,7 +359,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
     const token = localStorage.getItem("mswil_token");
     try {
       const res = await fetch(`http://localhost:8000/admin/revoke-user/${customerToRevoke.id}`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` }});
-      if (res.ok) { fetchCustomers(); setIsRevokeModalOpen(false); }
+      if (res.ok) { fetchDashboardData(); setIsRevokeModalOpen(false); }
       else alert((await res.json()).detail || "Failed to revoke customer access.");
     } catch (error) { alert("Network error."); } 
     finally { setIsRevoking(false); }
@@ -425,7 +371,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
     const token = localStorage.getItem("mswil_token");
     try {
       const res = await fetch(`http://localhost:8000/admin/users/${customerToDelete.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` }});
-      if (res.ok) { setCustomersList(prev => prev.filter(u => u.id !== customerToDelete.id)); setIsDeleteCustomerModalOpen(false); }
+      if (res.ok) { fetchDashboardData(); setIsDeleteCustomerModalOpen(false); }
       else setDeleteCustomerError((await res.json()).detail || "Failed to delete customer.");
     } catch (error) { setDeleteCustomerError("Network error."); } 
     finally { setIsDeletingCustomer(false); }
@@ -467,17 +413,12 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          item_code: newItem.item_code,
-          item_name: newItem.item_name,
-          serial_number: newItem.serial_number || null,
-          price: parseFloat(newItem.price),
-          quantity: parseInt(newItem.quantity, 10),
-          description: newItem.description || null
+          item_code: newItem.item_code, item_name: newItem.item_name, serial_number: newItem.serial_number || null,
+          price: parseFloat(newItem.price), quantity: parseInt(newItem.quantity, 10), description: newItem.description || null
         })
       });
       if (response.ok) {
-        const addedData = await response.json();
-        setInventory((prev) => [...prev, addedData].sort((a, b) => a.item_code - b.item_code));
+        await fetchDashboardData();
         setIsAddModalOpen(false);
         setNewItem({ item_code: '', item_name: '', serial_number: '', price: '', quantity: '', description: '' });
       } else setAddError((await response.json()).detail || "Failed to add inventory item.");
@@ -508,16 +449,12 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          item_name: editItem.item_name,
-          serial_number: editItem.serial_number || null,
-          price: parseFloat(editItem.price),
-          quantity: parseInt(editItem.quantity, 10),
-          description: editItem.description || null
+          item_name: editItem.item_name, serial_number: editItem.serial_number || null,
+          price: parseFloat(editItem.price), quantity: parseInt(editItem.quantity, 10), description: editItem.description || null
         })
       });
       if (response.ok) {
-        const updatedData = await response.json();
-        setInventory((prev) => prev.map((item) => (item.item_code === updatedData.item_code ? updatedData : item)).sort((a, b) => a.item_code - b.item_code));
+        await fetchDashboardData();
         setIsEditModalOpen(false);
       } else setEditError((await response.json()).detail || "Failed to update item.");
     } catch (error) { setEditError("Network error. Could not connect to the server."); } 
@@ -531,7 +468,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
     try {
       const response = await fetch(`http://localhost:8000/inventory/${itemToDelete.item_code}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` }});
       if (response.ok) {
-        setInventory((prev) => prev.filter((item) => item.item_code !== itemToDelete.item_code));
+        await fetchDashboardData();
         setIsDeleteModalOpen(false);
       } else setDeleteError((await response.json()).detail || "Failed to delete item.");
     } catch (error) { setDeleteError("Network error."); } 
@@ -572,7 +509,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
               <div className="hidden md:block">
                 <div className="ml-4 flex items-center md:ml-6">
                   
-                  {/* DYNAMIC NOTIFICATION BELL DROPDOWN */}
+                  {/* NOTIFICATION BELL DROPDOWN */}
                   <Menu as="div" className="relative ml-3">
                     <MenuButton className="relative rounded-full p-1 text-indigo-200 hover:text-white focus:outline-none">
                       <span className="sr-only">View notifications</span>
@@ -603,12 +540,12 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                       </div>
 
                       <div className="max-h-80 overflow-y-auto divide-y divide-gray-100">
-                        {notifications.length === 0 ? (
+                        {dropdownNotifications.length === 0 ? (
                           <div className="px-4 py-8 text-center text-xs text-gray-500 font-medium">
                             No notifications recorded yet.
                           </div>
                         ) : (
-                          notifications.map((n) => (
+                          dropdownNotifications.map((n) => (
                             <MenuItem key={n.id}>
                               {({ active }) => (
                                 <div
@@ -650,7 +587,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                         )}
                       </div>
                       
-                      {/* VIEW ALL FOOTER */}
+                      {/* VIEW ALL NOTIFICATIONS FOOTER */}
                       <div className="p-2 border-t border-gray-100 bg-gray-50 text-center">
                         <button 
                           onClick={() => setActiveTab('Notifications')}
@@ -741,7 +678,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                           <option value="name">Name / Desc</option>
                         </>
                       )}
-                      {activeTab === 'Manage Customers' && (
+                      {activeTab === 'Customers' && (
                         <>
                           <option value="id">User ID</option>
                           <option value="name">Name</option>
@@ -832,12 +769,12 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100 bg-white">
-                            {filteredInventory.length === 0 ? (
+                            {inventory.length === 0 ? (
                               <tr><td colSpan={5} className="px-6 py-8 text-center text-gray-500">
                                 {searchQuery ? `No items match "${searchQuery}"` : 'No inventory items found.'}
                               </td></tr>
                             ) : (
-                              filteredInventory.slice(0, 5).map((item) => (
+                              inventory.slice(0, 5).map((item) => (
                                 <tr key={item.item_code} className="hover:bg-gray-50 transition-colors">
                                   <td className="px-6 py-4 whitespace-nowrap">
                                     <div className="text-sm font-bold text-gray-900">#{item.item_code}</div>
@@ -867,12 +804,12 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                       </div>
                       <div className="flex-1 overflow-y-auto">
                         <ul className="divide-y divide-gray-100">
-                          {filteredRecentPOs.length === 0 ? (
+                          {recentPOs.length === 0 ? (
                             <li className="p-6 text-center text-gray-500 text-sm">
                               {searchQuery ? `No orders match "${searchQuery}"` : 'No recent orders.'}
                             </li>
                           ) : (
-                            filteredRecentPOs.slice(0, 3).map((po) => {
+                            recentPOs.map((po) => {
                               const isPOInvoiced = po.status === 'Invoiced';
                               const displayTotal = isPOInvoiced ? po.total_amount * 1.18 : po.total_amount;
 
@@ -904,12 +841,16 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                                   </div>
 
                                   <div className="flex justify-end gap-2 mt-2 pt-2 border-t border-gray-100">
-                                    <button 
-                                      onClick={(e) => handleViewDocument(e, po.id, 'po')}
-                                      className="text-emerald-600 hover:text-emerald-900 bg-emerald-50 px-3 py-1.5 rounded transition inline-flex items-center gap-1 text-xs font-medium"
-                                    >
-                                      <DocumentTextIcon className="h-3.5 w-3.5" /> View PO
-                                    </button>
+                                    {po.status === 'Backordered' ? (
+                                      <span className="text-xs font-semibold text-orange-600 bg-orange-50 px-3 py-1.5 rounded inline-flex items-center">Awaiting Stock</span>
+                                    ) : (
+                                      <button 
+                                        onClick={(e) => handleViewDocument(e, po.id, 'po')}
+                                        className="text-emerald-600 hover:text-emerald-900 bg-emerald-50 px-3 py-1.5 rounded transition inline-flex items-center gap-1 text-xs font-medium"
+                                      >
+                                        <DocumentTextIcon className="h-3.5 w-3.5" /> View PO
+                                      </button>
+                                    )}
                                     
                                     {po.status === 'Approved' && (
                                       <button 
@@ -979,7 +920,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                             <span className="font-bold text-gray-900 group-hover:text-red-600">{analytics.kpis.low_stock_count} Items</span>
                           </div>
                           <div 
-                            onClick={() => { isDeepLink.current = true; setActiveTab('Manage Customers'); setStatusFilter('pending'); }}
+                            onClick={() => { isDeepLink.current = true; setActiveTab('Customers'); setStatusFilter('pending'); }}
                             className="flex justify-between items-center cursor-pointer group pt-2"
                           >
                             <span className="text-sm font-medium text-gray-500 uppercase tracking-wider group-hover:text-indigo-600">Pending Users</span>
@@ -1035,7 +976,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                                 <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
                               </PieChart>
                             </ResponsiveContainer>
-                            <div className="absolute flex flex-col gap-2">
+                            <div className="absolute flex flex-col gap-2 pointer-events-none">
                               {analytics.charts.status.map((entry: any, index: number) => (
                                 <div key={entry.name} className="flex items-center gap-2">
                                   <div className="h-3 w-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
@@ -1117,12 +1058,12 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100 bg-white">
-                        {filteredInventory.length === 0 ? (
+                        {inventory.length === 0 ? (
                           <tr><td colSpan={7} className="px-6 py-8 text-center text-gray-500">
                             {searchQuery || statusFilter !== 'all' ? "No inventory items match your criteria." : 'No inventory items found.'}
                           </td></tr>
                         ) : (
-                          filteredInventory.map((item) => {
+                          inventory.map((item) => {
                             const isExpanded = expandedRow === item.item_code;
                             
                             return (
@@ -1181,11 +1122,20 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                       </tbody>
                     </table>
                   </div>
+                  
+                  {/* INVENTORY PAGINATION */}
+                  <Pagination 
+                    currentPage={currentPage} 
+                    totalItems={totalItems} 
+                    pageSize={pageSize} 
+                    onPageChange={setCurrentPage} 
+                  />
+                  
                 </div>
               )}
 
-              {/* --- MANAGE CUSTOMERS TAB --- */}
-              {activeTab === 'Manage Customers' && (
+              {/* --- CUSTOMERS TAB --- */}
+              {activeTab === 'Customers' && (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                   <div className="px-6 py-4 border-b border-gray-100 bg-white flex flex-col sm:flex-row justify-between items-center gap-4">
                     <h3 className="text-lg font-semibold text-gray-900">Manage Customers</h3>
@@ -1230,12 +1180,12 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100 bg-white">
-                        {filteredCustomers.length === 0 ? (
+                        {customersList.length === 0 ? (
                           <tr><td colSpan={5} className="px-6 py-12 text-center text-gray-500">
                             {searchQuery || statusFilter !== 'all' ? "No customers match your criteria." : "No customers registered yet."}
                           </td></tr>
                         ) : (
-                          filteredCustomers.map((c) => (
+                          customersList.map((c) => (
                             <tr key={c.id} className="hover:bg-gray-50 transition-colors">
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="text-sm font-bold text-gray-900">{c.name}</div>
@@ -1279,6 +1229,15 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                       </tbody>
                     </table>
                   </div>
+
+                  {/* CUSTOMERS PAGINATION */}
+                  <Pagination 
+                    currentPage={currentPage} 
+                    totalItems={totalItems} 
+                    pageSize={pageSize} 
+                    onPageChange={setCurrentPage} 
+                  />
+
                 </div>
               )}
 
@@ -1286,7 +1245,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
               {activeTab === 'Purchase Orders' && (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                   <div className="px-6 py-4 border-b border-gray-100 bg-white flex flex-col sm:flex-row justify-between items-center gap-4">
-                    <h3 className="text-lg font-semibold text-gray-900">Manage Customer Purchase Orders</h3>
+                    <h3 className="text-lg font-semibold text-gray-900">Manage Purchase Orders</h3>
                   </div>
                   {/* Secondary Filter Toolbar */}
                   <div className="px-6 py-3 bg-gray-50/80 border-b border-gray-100 flex flex-wrap items-center justify-between gap-4">
@@ -1345,12 +1304,12 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100 bg-white">
-                        {filteredPOs.length === 0 ? (
+                        {allPOs.length === 0 ? (
                           <tr><td colSpan={8} className="px-6 py-12 text-center text-gray-500">
                             {searchQuery || startDate || endDate || statusFilter !== 'all' ? "No purchase orders match your criteria." : "No purchase orders recorded yet."}
                           </td></tr>
                         ) : (
-                          filteredPOs.map((po) => {
+                          allPOs.map((po) => {
                             const isExpanded = expandedPoRow === po.id;
                             const isPOInvoiced = po.status === 'Invoiced';
                             const displayTotal = isPOInvoiced ? po.total_amount * 1.18 : po.total_amount;
@@ -1394,12 +1353,16 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap flex justify-center gap-2">
                                   
-                                  <button 
-                                    onClick={(e) => handleViewDocument(e, po.id, 'po')}
-                                    className="text-emerald-600 hover:text-emerald-900 bg-emerald-50 px-3 py-1.5 rounded transition inline-flex items-center gap-1 text-xs font-medium"
-                                  >
-                                    <DocumentTextIcon className="h-4 w-4" /> PO PDF
-                                  </button>
+                                  {po.status === 'Backordered' ? (
+                                    <span className="text-xs font-semibold text-orange-600 bg-orange-50 px-3 py-1.5 rounded inline-flex items-center">Awaiting Stock</span>
+                                  ) : (
+                                    <button 
+                                      onClick={(e) => handleViewDocument(e, po.id, 'po')}
+                                      className="text-emerald-600 hover:text-emerald-900 bg-emerald-50 px-3 py-1.5 rounded transition inline-flex items-center gap-1 text-xs font-medium"
+                                    >
+                                      <DocumentTextIcon className="h-4 w-4" /> PO PDF
+                                    </button>
+                                  )}
 
                                   {po.status === 'Approved' && (
                                     <button 
@@ -1427,6 +1390,15 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                       </tbody>
                     </table>
                   </div>
+                  
+                  {/* PO PAGINATION */}
+                  <Pagination 
+                    currentPage={currentPage} 
+                    totalItems={totalItems} 
+                    pageSize={pageSize} 
+                    onPageChange={setCurrentPage} 
+                  />
+                  
                 </div>
               )}
 
@@ -1485,12 +1457,12 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100 bg-white">
-                        {filteredNotifications.length === 0 ? (
+                        {tabNotifications.length === 0 ? (
                           <tr><td colSpan={5} className="px-6 py-12 text-center text-gray-500">
                             {startDate || endDate || statusFilter !== 'all' ? "No notifications match your filters." : "No notifications recorded yet."}
                           </td></tr>
                         ) : (
-                          filteredNotifications.map((notif) => {
+                          tabNotifications.map((notif) => {
                             return (
                               <tr key={notif.id} className="hover:bg-gray-50 transition-colors">
                                 <td className="px-6 py-4 whitespace-nowrap">
@@ -1526,7 +1498,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                                       onClick={(e) => handleNotificationClick(e, notif, false)}
                                       className="text-xs bg-gray-50 text-gray-600 hover:bg-gray-100 px-3 py-1.5 rounded font-medium transition inline-flex items-center gap-1 border border-gray-200"
                                     >
-                                      Mark As Read
+                                      Mark Read
                                     </button>
                                   )}
                                 </td>
@@ -1537,6 +1509,15 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                       </tbody>
                     </table>
                   </div>
+
+                  {/* NOTIFICATIONS PAGINATION */}
+                  <Pagination 
+                    currentPage={currentPage} 
+                    totalItems={totalItems} 
+                    pageSize={pageSize} 
+                    onPageChange={setCurrentPage} 
+                  />
+
                 </div>
               )}
 
@@ -1600,12 +1581,12 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100 bg-white">
-                        {filteredLogs.length === 0 ? (
+                        {activityLogs.length === 0 ? (
                           <tr><td colSpan={6} className="px-6 py-12 text-center text-gray-500">
                             {searchQuery || startDate || endDate || statusFilter !== 'all' ? "No activity logs match your criteria." : "No activity recorded yet."}
                           </td></tr>
                         ) : (
-                          filteredLogs.map((log) => {
+                          activityLogs.map((log) => {
                             const isExpanded = expandedLogRow === log.id;
                             const hasDelta = log.action_type === 'UPDATE' && log.changes && Object.keys(log.changes).length > 0;
                             
@@ -1686,6 +1667,15 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                       </tbody>
                     </table>
                   </div>
+
+                  {/* ACTIVITY LOG PAGINATION */}
+                  <Pagination 
+                    currentPage={currentPage} 
+                    totalItems={totalItems} 
+                    pageSize={pageSize} 
+                    onPageChange={setCurrentPage} 
+                  />
+
                 </div>
               )}
 

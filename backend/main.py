@@ -13,6 +13,7 @@ import logger_utils
 import os
 import calendar
 from datetime import datetime, timedelta
+from sqlalchemy import or_, cast, String
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -143,25 +144,69 @@ def approve_user(
 
 @app.get("/admin/customers")
 def get_all_customers(
+    skip: int = 0, 
+    limit: int = 50, 
+    search: Optional[str] = None, 
+    search_scope: Optional[str] = "all", 
+    status: Optional[str] = "all", 
+    sort_by: Optional[str] = "default",
     db: Session = Depends(get_db), 
     admin_user: models.User = Depends(auth_utils.get_current_admin)
 ):
-    """Admin workflow: Fetch ONLY customers. Admins are hidden."""
-    customers = db.query(models.User).filter(models.User.role == "customer").order_by(models.User.id.desc()).all()
+    """Admin workflow: Fetch customer details"""
+    query = db.query(models.User).filter(models.User.role == "customer")
     
+    if status == "approved": query = query.filter(models.User.is_approved == True)
+    elif status == "pending": query = query.filter(models.User.is_approved == False)
+
+    query = query.outerjoin(models.CustomerProfile, models.User.id == models.CustomerProfile.user_id)
+
+    if search:
+        search_term = f"%{search}%"
+        if search_scope == "id":
+            try: query = query.filter(models.User.id == int(search))
+            except ValueError: pass
+        elif search_scope == "name":
+            query = query.filter(or_(models.User.first_name.ilike(search_term), models.User.last_name.ilike(search_term)))
+        elif search_scope == "org":
+            query = query.filter(models.CustomerProfile.organization_name.ilike(search_term))
+        elif search_scope == "email":
+            query = query.filter(models.User.email.ilike(search_term))
+        else:
+            query = query.filter(
+                or_(
+                    models.User.id.cast(String).ilike(search_term),
+                    models.User.first_name.ilike(search_term),
+                    models.User.last_name.ilike(search_term),
+                    models.CustomerProfile.organization_name.ilike(search_term),
+                    models.User.email.ilike(search_term)
+                )
+            )
+
+    if sort_by == "org_asc": 
+        query = query.order_by(models.CustomerProfile.organization_name.asc())
+    elif sort_by == "org_desc": 
+        query = query.order_by(models.CustomerProfile.organization_name.desc())
+    else: 
+        query = query.order_by(models.User.id.desc())
+
+    total = query.count()
+    customers = query.offset(skip).limit(limit).all()
+
     result = []
     for c in customers:
         profile = db.query(models.CustomerProfile).filter(models.CustomerProfile.user_id == c.id).first()
         result.append({
-            "id": c.id,
+            "id": c.id, 
             "name": f"{c.first_name} {c.last_name}".strip() or c.username,
-            "username": c.username,
+            "username": c.username, 
             "email": c.email,
             "organization": profile.organization_name if profile else "Individual Customer",
-            "department": None, # Customers don't have internal departments
+            "department": None, 
             "is_approved": c.is_approved
         })
-    return result
+
+    return {"data": result, "total": total, "skip": skip, "limit": limit}
 
 @app.put("/admin/revoke-user/{user_id}")
 def revoke_user(
@@ -241,32 +286,60 @@ def add_inventory_item(
     return new_item
 
 
-@app.get("/inventory", response_model=list[schemas.InventoryItemResponse])
+@app.get("/inventory")
 def get_all_inventory(
-    item_code: Optional[int] = None, 
-    item_name: Optional[str] = None, 
-    serial_number: Optional[str] = None, 
+    skip: int = 0,
+    limit: int = 50,
+    search: Optional[str] = None,
+    search_scope: Optional[str] = "all",
+    status: Optional[str] = "all",
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth_utils.get_current_user)
 ):
-    """Workflow: Fetch items. Allows searching by code, name, or serial number."""
-    
-    # Base query that targets the whole table
+    """Workflow: Fetch paginated items with server-side filtering."""
     query = db.query(models.InventoryItem)
     
-    # Dynamically apply filters if the admin provided them in the URL
-    if item_code is not None:
-        query = query.filter(models.InventoryItem.item_code == item_code)
-        
-    if item_name:
-        query = query.filter(models.InventoryItem.item_name.ilike(f"%{item_name}%"))
-        
-    if serial_number:
-        query = query.filter(models.InventoryItem.serial_number == serial_number)
-        
-    # Execute the final filtered query
-    items = query.all()
-    return items
+    # 1. Apply Status Filter
+    if status == "in_stock":
+        query = query.filter(models.InventoryItem.quantity > 0)
+    elif status == "out_of_stock":
+        query = query.filter(models.InventoryItem.quantity <= 0)
+
+    # 2. Apply Text Search Filter
+    if search:
+        search_term = f"%{search}%"
+        if search_scope == "code":
+            try: query = query.filter(models.InventoryItem.item_code == int(search))
+            except ValueError: pass
+        elif search_scope == "name":
+            query = query.filter(
+                or_(
+                    models.InventoryItem.item_name.ilike(search_term),
+                    models.InventoryItem.description.ilike(search_term)
+                )
+            )
+        else: # "all" fields
+            query = query.filter(
+                or_(
+                    models.InventoryItem.item_name.ilike(search_term),
+                    models.InventoryItem.description.ilike(search_term),
+                    models.InventoryItem.serial_number.ilike(search_term),
+                    models.InventoryItem.item_code.cast(String).ilike(search_term)
+                )
+            )
+
+    # 3. Calculate Total Rows
+    total_count = query.count()
+
+    # 4. Apply Pagination
+    items = query.order_by(models.InventoryItem.item_code.asc()).offset(skip).limit(limit).all()
+
+    return {
+        "data": items,
+        "total": total_count,
+        "skip": skip,
+        "limit": limit
+    }
 
 
 @app.put("/inventory/{item_code}", response_model=schemas.InventoryItemResponse)
@@ -412,13 +485,40 @@ def admin_generate_invoice(
 
 @app.get("/admin/activity-logs")
 def get_activity_logs(
+    skip: int = 0, 
+    limit: int = 50, 
+    search: Optional[str] = None, 
+    search_scope: Optional[str] = "all", 
+    status: Optional[str] = "all", 
+    start_date: Optional[str] = None, 
+    end_date: Optional[str] = None,
     db: Session = Depends(get_db), 
     admin_user: models.User = Depends(auth_utils.get_current_admin)
 ):
     """Admin workflow: Fetch the immutable audit trail."""
-    # Fetch all logs, newest first
-    logs = db.query(models.AdminActivityLog).order_by(models.AdminActivityLog.timestamp.desc()).all()
-    return logs
+    query = db.query(models.AdminActivityLog)
+    
+    if status and status != "all":
+        query = query.filter(models.AdminActivityLog.action_type.ilike(status))
+
+    if start_date: query = query.filter(models.AdminActivityLog.timestamp >= start_date)
+    if end_date: query = query.filter(models.AdminActivityLog.timestamp <= end_date + " 23:59:59")
+
+    if search:
+        search_term = f"%{search}%"
+        if search_scope == "admin": query = query.filter(or_(models.AdminActivityLog.admin_name.ilike(search_term), models.AdminActivityLog.admin_email.ilike(search_term)))
+        elif search_scope == "entity": query = query.filter(or_(models.AdminActivityLog.entity_type.ilike(search_term), models.AdminActivityLog.entity_id.ilike(search_term)))
+        else:
+            query = query.filter(or_(
+                models.AdminActivityLog.admin_name.ilike(search_term),
+                models.AdminActivityLog.admin_email.ilike(search_term),
+                models.AdminActivityLog.entity_type.ilike(search_term),
+                models.AdminActivityLog.entity_id.ilike(search_term)
+            ))
+
+    total = query.count()
+    logs = query.order_by(models.AdminActivityLog.timestamp.desc()).offset(skip).limit(limit).all()
+    return {"data": logs, "total": total, "skip": skip, "limit": limit}
 
 @app.post("/purchase-order", response_model=schemas.PurchaseOrderResponse)
 def create_purchase_order(
@@ -539,30 +639,88 @@ def create_purchase_order(
 
     return new_po
 
-@app.get("/purchase-orders", response_model=list[schemas.PurchaseOrderResponse])
+@app.get("/purchase-orders")
 def get_purchase_orders(
+    skip: int = 0,
+    limit: int = 50,
+    search: Optional[str] = None,
+    search_scope: Optional[str] = "all",
+    status: Optional[str] = "all",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    sort_by: Optional[str] = "default",
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth_utils.get_current_user)
 ):
-    """Fetch all POs for the logged-in user (Customer or Admin)."""
-    
-    if current_user.role == "admin":
-        # Admins can see all POs
-        pos = db.query(models.PurchaseOrder).order_by(models.PurchaseOrder.id.desc()).all()
+    """Fetch paginated POs with server-side aggregation and filtering."""
+    query = db.query(models.PurchaseOrder)
+
+    # Role-Based Security Filter
+    if current_user.role != "admin":
+        query = query.filter(models.PurchaseOrder.customer_id == current_user.id)
+
+    # Apply Status Filter
+    if status and status != "all":
+        query = query.filter(models.PurchaseOrder.status.ilike(status))
+
+    # Apply Date Filters
+    if start_date:
+        query = query.filter(models.PurchaseOrder.created_at >= start_date)
+    if end_date:
+        query = query.filter(models.PurchaseOrder.created_at <= end_date + " 23:59:59")
+
+    # Apply Text Search
+    if search or sort_by in ["org_asc", "org_desc"]:
+        query = query.outerjoin(models.User, models.PurchaseOrder.customer_id == models.User.id) \
+                     .outerjoin(models.CustomerProfile, models.User.id == models.CustomerProfile.user_id)
+
+    if search:
+        search_term = f"%{search}%"
+        if search_scope == "id":
+            try: query = query.filter(models.PurchaseOrder.id == int(search))
+            except ValueError: pass
+        elif search_scope == "org":
+            query = query.filter(models.CustomerProfile.organization_name.ilike(search_term))
+        elif search_scope == "name":
+            query = query.filter(or_(models.User.first_name.ilike(search_term), models.User.last_name.ilike(search_term), models.User.username.ilike(search_term)))
+        else: # "all"
+            query = query.filter(
+                or_(
+                    models.PurchaseOrder.id.cast(String).ilike(search_term),
+                    models.CustomerProfile.organization_name.ilike(search_term),
+                    models.User.first_name.ilike(search_term),
+                    models.User.username.ilike(search_term),
+                    models.PurchaseOrder.status.ilike(search_term)
+                )
+            )
+
+    # Apply Sorting Logic
+    if sort_by == "org_asc":
+        query = query.order_by(models.CustomerProfile.organization_name.asc())
+    elif sort_by == "org_desc":
+        query = query.order_by(models.CustomerProfile.organization_name.desc())
+    elif sort_by == "val_asc":
+        query = query.order_by(models.PurchaseOrder.total_amount.asc())
+    elif sort_by == "val_desc":
+        query = query.order_by(models.PurchaseOrder.total_amount.desc())
     else:
-        # Customers can only see their own POs
-        pos = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.customer_id == current_user.id).order_by(models.PurchaseOrder.id.desc()).all()
+        query = query.order_by(models.PurchaseOrder.id.desc())
+
+    # Calculate Total Rows
+    total_count = query.count()
+
+    # Apply Pagination Slice
+    pos = query.offset(skip).limit(limit).all()
 
     result = []
     
     for po in pos:
         # 1. Fetch Customer Info
         customer = db.query(models.User).filter(models.User.id == po.customer_id).first()
-        customer_name = None
+        customer_name = f"{customer.first_name} {customer.last_name}".strip() or customer.username if customer else None
         org_name = "Individual Customer"
         
         if customer:
-            customer_name = f"{customer.first_name} {customer.last_name}".strip() or customer.username
             profile = db.query(models.CustomerProfile).filter(models.CustomerProfile.user_id == customer.id).first()
             if profile and profile.organization_name:
                 org_name = profile.organization_name
@@ -588,7 +746,12 @@ def get_purchase_orders(
             "invoiced_by_name": admin_name
         })
                 
-    return result
+    return {
+        "data": result,
+        "total": total_count,
+        "skip": skip,
+        "limit": limit
+    }
 
 @app.get("/purchase-orders/{po_id}/download")
 def download_document(
@@ -623,18 +786,29 @@ def download_document(
 
 
 # NOTIFICATION ENDPOINTS
-@app.get("/notifications", response_model=list[schemas.NotificationResponse])
+@app.get("/notifications")
 def get_user_notifications(
+    skip: int = 0, 
+    limit: int = 50, 
+    status: Optional[str] = "all", 
+    start_date: Optional[str] = None, 
+    end_date: Optional[str] = None,
     db: Session = Depends(get_db), 
     current_user: models.User = Depends(auth_utils.get_current_user)
 ):
     """Fetches all notifications for the currently logged-in user (Admin or Customer)."""
-    # Fetch notifications belonging to this user, newest first
-    notifs = db.query(models.Notification).filter(
-        models.Notification.recipient_id == current_user.id
-    ).order_by(models.Notification.created_at.desc()).all()
+    query = db.query(models.Notification).filter(models.Notification.recipient_id == current_user.id)
     
-    return notifs
+    if status == "unread": query = query.filter(models.Notification.is_read == False)
+    elif status == "read": query = query.filter(models.Notification.is_read == True)
+
+    if start_date: query = query.filter(models.Notification.created_at >= start_date)
+    if end_date: query = query.filter(models.Notification.created_at <= end_date + " 23:59:59")
+
+    total = query.count()
+    notifs = query.order_by(models.Notification.created_at.desc()).offset(skip).limit(limit).all()
+
+    return {"data": notifs, "total": total, "skip": skip, "limit": limit}
 
 @app.put("/notifications/{notif_id}/read")
 def mark_notification_read(
