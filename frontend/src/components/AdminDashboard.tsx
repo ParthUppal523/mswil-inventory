@@ -214,6 +214,36 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
     }
   };
 
+  // --- USER PREFERENCES ---
+  const [emailOptIn, setEmailOptIn] = useState(true);
+
+  const handleEmailToggle = async () => {
+    const newValue = !emailOptIn;
+    setEmailOptIn(newValue);
+    const token = localStorage.getItem("mswil_token");
+    if (!token) return;
+
+    try {
+      const response = await fetch("http://localhost:8000/user/preferences", {
+        method: "PUT",
+        headers: { 
+          "Content-Type": "application/json", 
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({ email_notifications: newValue })
+      });
+
+      if (!response.ok) {
+        // If the server fails, revert the toggle back to its original state
+        setEmailOptIn(!newValue);
+        console.error("Failed to save preference.");
+      }
+    } catch (error) {
+      setEmailOptIn(!newValue);
+      console.error("Network error saving preference.");
+    }
+  };
+
   // --- BELL DROPDOWN STATE ---
   const [dropdownNotifications, setDropdownNotifications] = useState<any[]>([]);
   const unreadCount = dropdownNotifications.filter(n => !n.is_read).length;
@@ -273,8 +303,6 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
       }
     }
   };
-
-  
 
   const handleMarkAllAsRead = async () => {
     const token = localStorage.getItem("mswil_token");
@@ -371,9 +399,11 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
       }
 
       if (activeTab === 'Dashboard') {
+        // Fetch Dashboard Analytics
         const analyticsRes = await fetch("http://localhost:8000/admin/analytics", { headers: { Authorization: `Bearer ${token}` } });
         if (analyticsRes.ok) setAnalytics(await analyticsRes.json());
       }
+
     } catch (error) { console.error("Failed to fetch dashboard data:", error); } 
     finally { setLoading(false); }
   };
@@ -381,6 +411,28 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
   useEffect(() => {
     fetchDashboardData();
   }, [activeTab, currentPage, searchQuery, searchScope, statusFilter, startDate, endDate, sortConfig]);
+
+  useEffect(() => {
+    const fetchUserPreferences = async () => {
+      const token = localStorage.getItem("mswil_token");
+      if (!token) return;
+
+      try {
+        const prefRes = await fetch("http://localhost:8000/user/preferences", { 
+          headers: { Authorization: `Bearer ${token}` } 
+        });
+        
+        if (prefRes.ok) {
+          const prefData = await prefRes.json();
+          setEmailOptIn(prefData.email_notifications);
+        }
+      } catch (error) {
+        console.error("Failed to fetch user preferences:", error);
+      }
+    };
+
+    fetchUserPreferences();
+  }, []);
 
   useEffect(() => {
     fetchDropdownNotifications();
@@ -972,7 +1024,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                           onClick={() => { isDeepLink.current = true; setActiveTab('Purchase Orders'); setStatusFilter('pending'); }}
                           className="overflow-hidden rounded-xl bg-white shadow-sm border border-gray-200 p-5 cursor-pointer hover:border-orange-300 hover:ring-1 hover:ring-orange-300 transition group"
                         >
-                          <dt className="truncate text-sm font-medium text-gray-500 uppercase tracking-wider group-hover:text-orange-600">Pending Approvals</dt>
+                          <dt className="truncate text-sm font-medium text-gray-500 uppercase tracking-wider group-hover:text-orange-600">Pending Invoice</dt>
                           <dd className="mt-1 text-3xl font-black tracking-tight text-gray-900">{analytics.kpis.pending_count}</dd>
                           <div className="mt-2 text-xs text-orange-600 font-semibold">Pipeline: ₹{analytics.kpis.pending_value.toLocaleString()}</div>
                         </div>
@@ -1491,6 +1543,25 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                     <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                       <BellIcon className="h-5 w-5 text-indigo-600" /> Notification Center
                     </h3>
+                    {/* EMAIL NOTIFICATIONS TOGGLE */}
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-medium text-gray-600">Email Alerts</span>
+                      <button
+                        type="button"
+                        onClick={handleEmailToggle}
+                        className={classNames(
+                          emailOptIn ? 'bg-indigo-600' : 'bg-gray-200',
+                          'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2'
+                        )}
+                      >
+                        <span
+                          className={classNames(
+                            emailOptIn ? 'translate-x-5' : 'translate-x-0',
+                            'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out'
+                          )}
+                        />
+                      </button>
+                    </div>
                   </div>
                   
                   {/* Filter Toolbar for Notifications */}

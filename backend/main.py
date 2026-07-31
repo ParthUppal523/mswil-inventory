@@ -14,6 +14,10 @@ import os
 import calendar
 from datetime import datetime, timedelta
 from sqlalchemy import or_, cast, String
+from pydantic import BaseModel
+
+class UserPreferencesUpdate(BaseModel):
+    email_notifications: bool
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -960,15 +964,6 @@ def mark_all_notifications_read(
     db.commit()
     return {"message": "All notifications cleared."}
 
-@app.get("/")
-def read_root():
-    return {
-        "status": "online",
-        "message": "Welcome to Motherson Sumi Wiring India Ltd. Inventory System API",
-        "database": "Connected and schemas generated"
-    }
-
-
 # DASHBOARD ANALYTICS ENDPOINTS
 @app.get("/admin/analytics")
 def get_admin_analytics(
@@ -1108,4 +1103,31 @@ def get_customer_analytics(
     return {
         "kpis": kpis,
         "charts": { "top_items": top_items }
+    }
+
+@app.get("/user/preferences")
+def get_user_preferences(
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(auth_utils.get_current_user)
+):
+    """Fetches the current user's email notification preference."""
+    return {"email_notifications": current_user.email_notifications}
+
+@app.put("/user/preferences")
+def update_user_preferences(
+    prefs: UserPreferencesUpdate, 
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(auth_utils.get_current_user)
+):
+    """Updates the user's email notification preference in the database."""
+    current_user.email_notifications = prefs.email_notifications
+    db.commit()
+    return {"message": "Preferences updated successfully", "email_notifications": current_user.email_notifications}
+
+@app.get("/")
+def read_root():
+    return {
+        "status": "online",
+        "message": "Welcome to Motherson Sumi Wiring India Ltd. Inventory System API",
+        "database": "Connected and schemas generated"
     }

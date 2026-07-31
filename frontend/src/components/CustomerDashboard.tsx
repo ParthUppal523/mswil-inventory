@@ -128,6 +128,36 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
   const [tabNotifications, setTabNotifications] = useState<any[]>([]);
   const unreadCount = dropdownNotifications.filter(n => !n.is_read).length;
 
+  // --- USER PREFERENCES ---
+  const [emailOptIn, setEmailOptIn] = useState(true);
+  
+  const handleEmailToggle = async () => {
+    const newValue = !emailOptIn;
+    setEmailOptIn(newValue);
+    const token = localStorage.getItem("mswil_token");
+    if (!token) return;
+
+    try {
+      const response = await fetch("http://localhost:8000/user/preferences", {
+        method: "PUT",
+        headers: { 
+          "Content-Type": "application/json", 
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({ email_notifications: newValue })
+      });
+
+      if (!response.ok) {
+        // If the server fails, revert the toggle back to its original state
+        setEmailOptIn(!newValue);
+        console.error("Failed to save preference.");
+      }
+    } catch (error) {
+      setEmailOptIn(!newValue);
+      console.error("Network error saving preference.");
+    }
+  };
+
   // --- ANALYTICS STATES ---
   const [analytics, setAnalytics] = useState<any>(null);
   const COLORS = ['#059669', '#10b981', '#34d399', '#6ee7b7', '#a7f3d0'];
@@ -217,6 +247,28 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
   useEffect(() => {
     fetchCustomerData();
   }, [activeTab, currentPage, searchQuery, searchScope, statusFilter, startDate, endDate, sortConfig]);
+
+  useEffect(() => {
+    const fetchUserPreferences = async () => {
+      const token = localStorage.getItem("mswil_token");
+      if (!token) return;
+
+      try {
+        const prefRes = await fetch("http://localhost:8000/user/preferences", { 
+          headers: { Authorization: `Bearer ${token}` } 
+        });
+        
+        if (prefRes.ok) {
+          const prefData = await prefRes.json();
+          setEmailOptIn(prefData.email_notifications);
+        }
+      } catch (error) {
+        console.error("Failed to fetch user preferences:", error);
+      }
+    };
+
+    fetchUserPreferences();
+  }, []);
 
   const fetchDropdownNotifications = async () => {
     const token = localStorage.getItem("mswil_token");
@@ -1174,6 +1226,25 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
                     <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                       <BellIcon className="h-5 w-5 text-emerald-600" /> Notification Center
                     </h3>
+                    {/* EMAIL NOTIFICATIONS TOGGLE */}
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-medium text-gray-600">Email Alerts</span>
+                      <button
+                        type="button"
+                        onClick={handleEmailToggle}
+                        className={classNames(
+                          emailOptIn ? 'bg-emerald-600' : 'bg-gray-200',
+                          'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:ring-offset-2'
+                        )}
+                      >
+                        <span
+                          className={classNames(
+                            emailOptIn ? 'translate-x-5' : 'translate-x-0',
+                            'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out'
+                          )}
+                        />
+                      </button>
+                    </div>
                   </div>
                   
                   {/* Filter Toolbar for Notifications */}
