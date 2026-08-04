@@ -4,8 +4,7 @@ import { Bars3Icon, BellIcon, XMarkIcon, MagnifyingGlassIcon, DocumentTextIcon, 
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 
 const userNavigation = [
-  { name: 'Your profile', href: '#' },
-  { name: 'Settings', href: '#' },
+  { name: 'Profile Settings', href: '/settings' },
   { name: 'Sign out', href: '#', action: 'logout' },
 ];
 
@@ -84,7 +83,7 @@ const Pagination = ({ currentPage, totalItems, pageSize, onPageChange }: { curre
   );
 };
 
-export default function CustomerDashboard({ handleLogout }: { handleLogout: () => void }) {
+export default function CustomerDashboard({ handleLogout, userInitial }: { handleLogout: () => void, userInitial: string }) {
   // --- STATE MANAGEMENT ---
   const [activeTab, setActiveTab] = useState('Dashboard');
   const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
@@ -472,7 +471,7 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
       {/* EMERALD OVERLAPPING HEADER */}
       <div className={classNames("bg-emerald-700 transition-all duration-300", activeTab === 'Dashboard' ? "pb-64" : "pb-32")}>
         <Disclosure as="nav" className="border-b border-emerald-600/50 bg-emerald-700">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-[96%] px-4 sm:px-6 lg:px-8">
             <div className="flex h-16 items-center justify-between">
               <div className="flex items-center">
                 <div className="bg-white p-2 rounded-lg inline-flex items-center justify-center shadow-md">
@@ -596,8 +595,8 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
 
                   <Menu as="div" className="relative ml-3">
                     <MenuButton className="relative flex max-w-xs items-center rounded-full bg-emerald-600 text-sm focus:outline-none ring-2 ring-white/20">
-                      <div className="size-8 rounded-full bg-emerald-800 flex items-center justify-center text-white font-bold">
-                        C
+                      <div className="size-8 rounded-full bg-white flex items-center justify-center text-emerald-600 font-bold border border-emerald-400">
+                        {userInitial}
                       </div>
                     </MenuButton>
                     <MenuItems transition className="absolute right-0 z-10 mt-2 w-48 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black/5 transition focus:outline-none data-closed:scale-95 data-closed:opacity-0">
@@ -621,7 +620,7 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
         </Disclosure>
 
         <header className="py-10">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-4">
+          <div className="mx-auto max-w-[96%] px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-4">
             <h1 className="text-3xl font-bold tracking-tight text-white">{activeTab}</h1>
             
             {/* THE COMPOSITE SEARCH BAR - Only Visible for Order History Tab */}
@@ -655,7 +654,7 @@ export default function CustomerDashboard({ handleLogout }: { handleLogout: () =
       </div>
 
       <main className={classNames("transition-all duration-300", activeTab === 'Dashboard' ? "-mt-64" : "-mt-32")}>
-        <div className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-[96%] px-4 pb-12 sm:px-6 lg:px-8">
           
           {loading ? (
             <div className="flex justify-center items-center h-64 bg-white rounded-xl shadow-sm border border-gray-200">

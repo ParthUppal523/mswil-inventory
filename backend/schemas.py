@@ -98,3 +98,17 @@ class NotificationResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+# --- USER PROFILE SCHEMAS ---
+class UserProfileUpdate(BaseModel):
+    first_name: str
+    last_name: str
+    email: str
+    username: str
+
+class UserPasswordUpdate(BaseModel):
+    current_password: str
+    new_password: str
+
+class UserPreferencesUpdate(BaseModel):
+    email_notifications: bool

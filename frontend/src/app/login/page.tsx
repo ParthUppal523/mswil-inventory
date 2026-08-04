@@ -109,15 +109,15 @@ export default function Login() {
       {/* LEFT SIDE: Branding Panel (Hidden on Mobile) */}
       <div className="hidden lg:flex lg:w-1/2 bg-emerald-800 flex-col justify-center items-center p-12 relative overflow-hidden">
         <div className="absolute inset-0 bg-emerald-900 opacity-50 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPgo8cmVjdCB3aWR0aD0iOCIgaGVpZ2h0PSI4IiBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9IjAuMDUiLz4KPC9zdmc+')]"></div>
-        <div className="relative z-10 text-center text-white">
-          <div className="bg-white p-4 rounded-xl inline-block mb-8 shadow-2xl">
+        <div className="relative z-10 text-center text-white flex flex-col items-center">
+          <div className="bg-white p-4 rounded-xl inline-block shadow-2xl mb-8">
              <div className="h-16 flex items-center justify-center"> 
-              <img src="/logo.png" alt="MSWIL Logo" className="h-full w-auto object-contain" /> 
+               <img src="/logo.png" alt="MSWIL Logo" className="h-full w-auto object-contain" /> 
              </div>
           </div>
           <h1 className="text-4xl font-bold tracking-tight mb-4">MSWIL Enterprise Portal</h1>
-          <p className="text-emerald-100 text-lg max-w-md mx-auto">
-            Streamlined inventory management, instant purchase orders, and seamless corporate fulfillment.
+          <p className="text-emerald-100 text-lg max-w-md mx-auto px-4">
+            Empowering global mobility through advanced wiring solutions, smart vision systems, and seamless corporate fulfillment.
           </p>
         </div>
       </div>

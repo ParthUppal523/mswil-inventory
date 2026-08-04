@@ -4,8 +4,7 @@ import { Bars3Icon, BellIcon, XMarkIcon, MagnifyingGlassIcon, EllipsisVerticalIc
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
 
 const userNavigation = [
-  { name: 'Your profile', href: '#' },
-  { name: 'Settings', href: '#' },
+  { name: 'Profile Settings', href: '/settings' },
   { name: 'Sign out', href: '#', action: 'logout' },
 ];
 
@@ -105,7 +104,24 @@ const Pagination = ({ currentPage, totalItems, pageSize, onPageChange }: { curre
   );
 };
 
-export default function AdminDashboard({ handleLogout }: { handleLogout: () => void }) {
+// Dynamic Currency Formatter
+const formatYAxisCurrency = (value: number) => {
+  if (value >= 1_000_000_000_000) {
+    return `₹${(value / 1_000_000_000_000).toFixed(1).replace('.0', '')}T`;
+  }
+  if (value >= 1_000_000_000) {
+    return `₹${(value / 1_000_000_000).toFixed(1).replace('.0', '')}B`;
+  }
+  if (value >= 1_000_000) {
+    return `₹${(value / 1_000_000).toFixed(1).replace('.0', '')}M`;
+  }
+  if (value >= 1_000) {
+    return `₹${(value / 1_000).toFixed(0)}k`;
+  }
+  return `₹${value}`;
+};
+
+export default function AdminDashboard({ handleLogout, userInitial }: { handleLogout: () => void, userInitial: string }) {
   const [inventory, setInventory] = useState<any[]>([]);
   const [recentPOs, setRecentPOs] = useState<any[]>([]);
   const [allPOs, setAllPOs] = useState<any[]>([]);
@@ -602,7 +618,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
       
       <div className="bg-indigo-600 pb-32">
         <Disclosure as="nav" className="border-b border-indigo-500/25 bg-indigo-600">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-[96%] px-4 sm:px-6 lg:px-8">
             <div className="flex h-16 items-center justify-between">
               <div className="flex items-center">
                 <div className="bg-white p-2 rounded-lg inline-flex items-center justify-center shadow-md">
@@ -728,8 +744,8 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                     <MenuButton className="relative flex max-w-xs items-center rounded-full bg-indigo-600 text-sm focus:outline-none">
                       <span className="absolute -inset-1.5" />
                       <span className="sr-only">Open user menu</span>
-                      <div className="size-8 rounded-full bg-indigo-800 flex items-center justify-center text-white font-bold border border-indigo-400">
-                        A
+                      <div className="size-8 rounded-full bg-white flex items-center justify-center text-indigo-600 font-bold border border-indigo-200">
+                        {userInitial}
                       </div>
                     </MenuButton>
                     <MenuItems transition className="absolute right-0 z-10 mt-2 w-48 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black/5 transition focus:outline-none data-closed:scale-95 data-closed:opacity-0">
@@ -782,7 +798,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
         </Disclosure>
 
         <header className="py-10">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+          <div className="mx-auto max-w-[96%] px-4 sm:px-6 lg:px-8 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
             <h1 className="text-3xl font-bold tracking-tight text-white">{activeTab}</h1>
             
             {/* THE COMPOSITE SEARCH BAR */}
@@ -846,7 +862,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
       </div>
 
       <main className="-mt-32">
-        <div className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-[96%] px-4 pb-12 sm:px-6 lg:px-8">
           
           {loading ? (
             <div className="flex justify-center items-center h-64 bg-white rounded-xl shadow-sm border border-gray-200">
@@ -884,7 +900,7 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                             <tr>
                               <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">
                                 <div className="text-gray-700">Item Code</div>
-                                <div className="mt-1 text-[11px] font-medium text-gray-400">Serial Code</div>
+                                <div className="mt-1 text-[11px] font-medium text-gray-400">Serial Number</div>
                               </th>
                               <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
                               <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Price (₹)</th>
@@ -1072,7 +1088,9 @@ export default function AdminDashboard({ handleLogout }: { handleLogout: () => v
                                   axisLine={false} 
                                   tickLine={false} 
                                   tick={{ fontSize: 12, fill: '#6b7280' }} 
-                                  tickFormatter={(value) => `₹${value >= 1000 ? (value/1000).toFixed(0) + 'k' : value}`} 
+                                  tickFormatter={formatYAxisCurrency} // ✅ Dynamic M / k formatter
+                                  stroke="#9CA3AF"
+                                  fontSize={12}
                                 />
                                 <Tooltip 
                                   formatter={(value: any) => [`₹${Number(value).toLocaleString()}`, 'Revenue']}

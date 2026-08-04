@@ -14,10 +14,6 @@ import os
 import calendar
 from datetime import datetime, timedelta
 from sqlalchemy import or_, cast, String
-from pydantic import BaseModel
-
-class UserPreferencesUpdate(BaseModel):
-    email_notifications: bool
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -282,7 +278,7 @@ def add_inventory_item(
     db.commit()
     db.refresh(new_item)
 
-    background_tasks.add(
+    background_tasks.add_task(
         logger_utils.log_admin_activity, 
         db, admin_user, "CREATE", "InventoryItem", new_item.item_code
     )
@@ -1105,6 +1101,104 @@ def get_customer_analytics(
         "charts": { "top_items": top_items }
     }
 
+@app.get("/user/profile")
+def get_user_profile(
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(auth_utils.get_current_user)
+):
+    """Fetches the core profile data, merging organization details if the user is a customer."""
+    profile_data = {
+        "id": current_user.id,
+        "username": current_user.username,
+        "email": current_user.email,
+        "first_name": current_user.first_name,
+        "last_name": current_user.last_name,
+        "role": current_user.role,
+    }
+    
+    # If the user is a customer, fetch their organization data
+    if current_user.role == "customer":
+        customer_profile = db.query(models.CustomerProfile).filter(models.CustomerProfile.user_id == current_user.id).first()
+        if customer_profile:
+            profile_data["organization_name"] = customer_profile.organization_name
+            profile_data["gst_number"] = customer_profile.gst_number
+            
+    return profile_data
+
+@app.put("/user/profile")
+def update_user_profile(
+    profile_update: schemas.UserProfileUpdate, 
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(auth_utils.get_current_user)
+):
+    """Updates basic personal details."""
+    
+    # Security Check: Ensure the new email isn't already taken by another account
+    if profile_update.email != current_user.email:
+        existing_email = db.query(models.User).filter(models.User.email == profile_update.email).first()
+        if existing_email:
+            raise HTTPException(status_code=400, detail="Email already registered to another account.")
+
+    if profile_update.username != current_user.username:
+        existing_username = db.query(models.User).filter(models.User.username == profile_update.username).first()
+        if existing_username:
+            raise HTTPException(status_code=400, detail="Username already taken by another account.")
+            
+    current_user.first_name = profile_update.first_name
+    current_user.last_name = profile_update.last_name
+    current_user.email = profile_update.email
+    current_user.username = profile_update.username
+    db.commit()
+    
+    # Audit Trail: Log the action if an admin alters their own profile
+    if current_user.role == "admin":
+        log = models.AdminActivityLog(
+            admin_id=current_user.id, 
+            admin_name=f"{current_user.first_name} {current_user.last_name}".strip() or current_user.username, 
+            admin_email=current_user.email,
+            action_type="UPDATE", 
+            entity_type="User Profile", 
+            entity_id=current_user.id,
+            changes={"profile": {"old": "Previous Details", "new": "Updated Details"}}
+        )
+        db.add(log)
+        db.commit()
+        
+    return {"message": "Profile updated successfully."}
+
+
+@app.put("/user/security/password")
+def update_password(
+    pass_update: schemas.UserPasswordUpdate, 
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(auth_utils.get_current_user)
+):
+    """Securely verifies the old password before hashing and saving the new one."""
+    
+    # Verify the current password against the cryptographic hash in the database
+    if not auth_utils.verify_password(pass_update.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect.")
+        
+    # Hash the new password and save it
+    current_user.hashed_password = auth_utils.get_password_hash(pass_update.new_password)
+    db.commit()
+    
+    # Audit Trail: Log the security event (in case of admin)
+    if current_user.role == "admin":
+        log = models.AdminActivityLog(
+            admin_id=current_user.id, 
+            admin_name=f"{current_user.first_name} {current_user.last_name}".strip() or current_user.username, 
+            admin_email=current_user.email,
+            action_type="UPDATE", 
+            entity_type="Security", 
+            entity_id=current_user.id,
+            changes={"password": {"old": "***", "new": "***"}}
+        )
+        db.add(log)
+        db.commit()
+        
+    return {"message": "Password updated successfully."}
+
 @app.get("/user/preferences")
 def get_user_preferences(
     db: Session = Depends(get_db), 
@@ -1115,7 +1209,7 @@ def get_user_preferences(
 
 @app.put("/user/preferences")
 def update_user_preferences(
-    prefs: UserPreferencesUpdate, 
+    prefs: schemas.UserPreferencesUpdate, 
     db: Session = Depends(get_db), 
     current_user: models.User = Depends(auth_utils.get_current_user)
 ):
