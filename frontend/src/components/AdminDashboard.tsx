@@ -84,7 +84,7 @@ const Pagination = ({ currentPage, totalItems, pageSize, onPageChange }: { curre
                   key={page}
                   onClick={() => onPageChange(page)}
                   className={classNames(
-                    isCurrent ? 'z-10 bg-indigo-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600' : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50',
+                    isCurrent ? 'z-10 bg-indigo-600 text-white focus-visible:outline focus-visible:outline-offset-2 focus-visible:outline-indigo-600' : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50',
                     'relative inline-flex items-center px-4 py-2 text-sm font-semibold focus:z-20 focus:outline-offset-0'
                   )}
                 >
@@ -804,7 +804,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
             {/* THE COMPOSITE SEARCH BAR */}
             <div className="w-full lg:w-auto">
               {activeTab !== 'Notifications' && (
-                <div className="flex rounded-md shadow-sm w-full lg:min-w-[500px]">
+                <div className="flex rounded-md shadow-sm w-full lg:min-w-500px">
                   {activeTab !== 'Dashboard' && (
                     <select
                       value={searchScope}
@@ -843,7 +843,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
                     </select>
                   )}
                   
-                  <div className="relative flex-grow">
+                  <div className="relative grow">
                     <MagnifyingGlassIcon className={`absolute left-3 top-2.5 h-5 w-5 text-indigo-300 ${activeTab !== 'Dashboard' ? 'hidden sm:block' : ''}`} />
                     <input
                       type="text"
@@ -1233,7 +1233,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
                                 
                                 <td className={classNames(
                                   "px-6 py-4 text-sm text-gray-500 transition-all duration-200",
-                                  isExpanded ? "whitespace-normal wrap-break-words min-w-[250px]" : "truncate max-w-xs"
+                                  isExpanded ? "whitespace-normal wrap-break-words min-w-250px" : "truncate max-w-xs"
                                 )}>
                                   {item.description || '--'}
                                 </td>
@@ -1489,10 +1489,10 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
                                     </div>
                                   )}
                                 </td>
-                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-[200px]" : "truncate max-w-[150px]")}>
+                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-200px" : "truncate max-w-150px")}>
                                   {po.shipping_address || '--'}
                                 </td>
-                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-[200px]" : "truncate max-w-[150px]")}>
+                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-200px" : "truncate max-w-150px")}>
                                   {po.billing_address || '--'}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap">
@@ -1569,7 +1569,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
                         onClick={handleEmailToggle}
                         className={classNames(
                           emailOptIn ? 'bg-indigo-600' : 'bg-gray-200',
-                          'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2'
+                          'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2'
                         )}
                       >
                         <span

@@ -231,7 +231,7 @@ export default function Settings() {
         <div className="flex flex-col md:flex-row gap-8 items-start">
           
           {/* THE COLLAPSIBLE SIDEBAR */}
-          <aside className="w-full md:w-[72px] md:hover:w-64 shrink-0 group transition-[width] duration-500 ease-in-out bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col z-10">
+          <aside className="w-full md:w-72px md:hover:w-64 shrink-0 group transition-[width] duration-500 ease-in-out bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col z-10">
             <nav className="flex flex-row md:flex-col py-2 md:w-64 overflow-x-auto md:overflow-hidden">
               <button 
                 onClick={() => setActiveTab("overview")}
@@ -365,7 +365,7 @@ export default function Settings() {
                         <button
                           type="button"
                           onClick={handleEmailToggle}
-                          className={`${emailOptIn ? theme.bg : 'bg-gray-300'} relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none`}
+                          className={`${emailOptIn ? theme.bg : 'bg-gray-300'} relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none`}
                         >
                           <span className={`${emailOptIn ? 'translate-x-5' : 'translate-x-0'} pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out`} />
                         </button>
