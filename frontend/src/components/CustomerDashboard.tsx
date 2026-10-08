@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "@/config";
 import React, { useState, useEffect, useRef, Fragment } from 'react';
 import { Disclosure, DisclosureButton, DisclosurePanel, Menu, MenuButton, MenuItem, MenuItems, Listbox, ListboxButton, ListboxOption, ListboxOptions, Dialog, DialogPanel, DialogTitle, DialogBackdrop } from '@headlessui/react';
 import { Bars3Icon, BellIcon, XMarkIcon, MagnifyingGlassIcon, DocumentTextIcon, DocumentArrowDownIcon, TrashIcon, PlusIcon, ChevronUpDownIcon, FunnelIcon, ArrowPathIcon, EyeIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
@@ -137,7 +138,7 @@ export default function CustomerDashboard({ handleLogout, userInitial }: { handl
     if (!token) return;
 
     try {
-      const response = await fetch("http://localhost:8000/user/preferences", {
+      const response = await fetch(`${API_BASE_URL}/user/preferences`, {
         method: "PUT",
         headers: { 
           "Content-Type": "application/json", 
@@ -208,7 +209,7 @@ export default function CustomerDashboard({ handleLogout, userInitial }: { handl
       const queryParams = `?skip=${skip}&limit=${pageSize}&search=${encodeURIComponent(searchQuery)}&search_scope=${searchScope}&status=${statusFilter}&start_date=${startDate}&end_date=${endDate}&sort_by=${sortConfig}`;
 
       if (activeTab === 'Dashboard' || activeTab === 'Order History') {
-        const poRes = await fetch(`http://localhost:8000/purchase-orders${activeTab === 'Order History' ? queryParams : '?limit=5'}`, { headers: { Authorization: `Bearer ${token}` } });
+        const poRes = await fetch(`${API_BASE_URL}/purchase-orders${activeTab === 'Order History' ? queryParams : '?limit=5'}`, { headers: { Authorization: `Bearer ${token}` } });
         if (poRes.ok) {
           const poData = await poRes.json();
           setPurchaseOrders(poData.data || poData);
@@ -217,7 +218,7 @@ export default function CustomerDashboard({ handleLogout, userInitial }: { handl
       }
 
       if (activeTab === 'Notifications') {
-        const notifRes = await fetch(`http://localhost:8000/notifications${queryParams}`, { headers: { Authorization: `Bearer ${token}` }});
+        const notifRes = await fetch(`${API_BASE_URL}/notifications${queryParams}`, { headers: { Authorization: `Bearer ${token}` }});
         if (notifRes.ok) {
           const notifData = await notifRes.json();
           setTabNotifications(notifData.data || notifData);
@@ -227,7 +228,7 @@ export default function CustomerDashboard({ handleLogout, userInitial }: { handl
 
       // Always fetch full inventory for the cart dropdown
       if (inventoryList.length === 0 || activeTab === 'Submit PO') {
-        const invRes = await fetch(`http://localhost:8000/inventory?limit=1000`, { headers: { Authorization: `Bearer ${token}` } });
+        const invRes = await fetch(`${API_BASE_URL}/inventory?limit=1000`, { headers: { Authorization: `Bearer ${token}` } });
         if (invRes.ok) {
           const invData = await invRes.json();
           setInventoryList(invData.data || invData);
@@ -235,7 +236,7 @@ export default function CustomerDashboard({ handleLogout, userInitial }: { handl
       }
 
       if (activeTab === 'Dashboard') {
-        const analyticsRes = await fetch("http://localhost:8000/customer/analytics", { headers: { Authorization: `Bearer ${token}` } });
+        const analyticsRes = await fetch(`${API_BASE_URL}/customer/analytics`, { headers: { Authorization: `Bearer ${token}` } });
         if (analyticsRes.ok) setAnalytics(await analyticsRes.json());
       }
       
@@ -253,7 +254,7 @@ export default function CustomerDashboard({ handleLogout, userInitial }: { handl
       if (!token) return;
 
       try {
-        const prefRes = await fetch("http://localhost:8000/user/preferences", { 
+        const prefRes = await fetch(`${API_BASE_URL}/user/preferences`, { 
           headers: { Authorization: `Bearer ${token}` } 
         });
         
@@ -273,7 +274,7 @@ export default function CustomerDashboard({ handleLogout, userInitial }: { handl
     const token = localStorage.getItem("mswil_token");
     if (!token) return;
     try {
-      const res = await fetch("http://localhost:8000/notifications?limit=50", { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API_BASE_URL}/notifications?limit=50`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const data = await res.json();
         setDropdownNotifications(data.data || data);
@@ -295,7 +296,7 @@ export default function CustomerDashboard({ handleLogout, userInitial }: { handl
     // Mark as read
     if (!notif.is_read && token) {
       try {
-        await fetch(`http://localhost:8000/notifications/${notif.id}/read`, {
+        await fetch(`${API_BASE_URL}/notifications/${notif.id}/read`, {
           method: "PUT",
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -337,7 +338,7 @@ export default function CustomerDashboard({ handleLogout, userInitial }: { handl
     const token = localStorage.getItem("mswil_token");
     if (!token) return;
     try {
-      await fetch("http://localhost:8000/notifications/read-all", { method: "PUT", headers: { Authorization: `Bearer ${token}` } });
+      await fetch(`${API_BASE_URL}/notifications/read-all`, { method: "PUT", headers: { Authorization: `Bearer ${token}` } });
       setDropdownNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
       setTabNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
     } catch (error) { console.error("Failed to mark all as read:", error); }
@@ -350,7 +351,7 @@ export default function CustomerDashboard({ handleLogout, userInitial }: { handl
     if (!token) return;
 
     try {
-      const response = await fetch(`http://localhost:8000/purchase-orders/${poId}/download?doc_type=${docType}`, {
+      const response = await fetch(`${API_BASE_URL}/purchase-orders/${poId}/download?doc_type=${docType}`, {
         method: "GET", headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -437,7 +438,7 @@ export default function CustomerDashboard({ handleLogout, userInitial }: { handl
     };
 
     try {
-      const response = await fetch("http://localhost:8000/purchase-order", {
+      const response = await fetch(`${API_BASE_URL}/purchase-order`, {
         method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify(payload)
       });

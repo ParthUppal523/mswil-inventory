@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "@/config";
 import React, { useState, useEffect, Fragment, useRef } from 'react';
 import { Disclosure, DisclosureButton, DisclosurePanel, Menu, MenuButton, MenuItem, MenuItems, Dialog, DialogPanel, DialogTitle, DialogBackdrop } from '@headlessui/react';
 import { Bars3Icon, BellIcon, XMarkIcon, MagnifyingGlassIcon, EllipsisVerticalIcon, DocumentTextIcon, DocumentArrowDownIcon, CheckCircleIcon, TrashIcon, NoSymbolIcon, FunnelIcon, ArrowPathIcon, ClipboardDocumentListIcon, EyeIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
@@ -196,7 +197,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
     
     const token = localStorage.getItem("mswil_token");
     try {
-      const res = await fetch(`http://localhost:8000/admin/purchase-orders/${po.id}/items`, {
+      const res = await fetch(`${API_BASE_URL}/admin/purchase-orders/${po.id}/items`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
@@ -211,7 +212,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
     setIsApprovingBackorder(true);
     const token = localStorage.getItem("mswil_token");
     try {
-      const res = await fetch(`http://localhost:8000/admin/purchase-orders/${selectedBackorderPO.id}/approve`, {
+      const res = await fetch(`${API_BASE_URL}/admin/purchase-orders/${selectedBackorderPO.id}/approve`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -240,7 +241,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
     if (!token) return;
 
     try {
-      const response = await fetch("http://localhost:8000/user/preferences", {
+      const response = await fetch(`${API_BASE_URL}/user/preferences`, {
         method: "PUT",
         headers: { 
           "Content-Type": "application/json", 
@@ -268,7 +269,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
     const token = localStorage.getItem("mswil_token");
     if (!token) return;
     try {
-      const res = await fetch("http://localhost:8000/notifications?limit=50", { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API_BASE_URL}/notifications?limit=50`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) setDropdownNotifications((await res.json()).data || []);
     } catch (error) { console.error("Failed to fetch notifications:", error); }
   };
@@ -279,7 +280,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
     
     if (!notif.is_read && token) {
       try {
-        await fetch(`http://localhost:8000/notifications/${notif.id}/read`, { method: "PUT", headers: { Authorization: `Bearer ${token}` } });
+        await fetch(`${API_BASE_URL}/notifications/${notif.id}/read`, { method: "PUT", headers: { Authorization: `Bearer ${token}` } });
         setDropdownNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
         setTabNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
       } catch (error) {}
@@ -324,7 +325,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
     const token = localStorage.getItem("mswil_token");
     if (!token) return;
     try {
-      await fetch("http://localhost:8000/notifications/read-all", { method: "PUT", headers: { Authorization: `Bearer ${token}` } });
+      await fetch(`${API_BASE_URL}/notifications/read-all`, { method: "PUT", headers: { Authorization: `Bearer ${token}` } });
       setDropdownNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
       setTabNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
     } catch (error) {}
@@ -369,7 +370,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
       const queryParams = `?skip=${skip}&limit=${pageSize}&search=${encodeURIComponent(searchQuery)}&search_scope=${searchScope}&status=${statusFilter}&start_date=${startDate}&end_date=${endDate}&sort_by=${sortConfig}`;
 
       if (activeTab === 'Dashboard' || activeTab === 'Inventory') {
-        const invRes = await fetch(`http://localhost:8000/inventory${activeTab === 'Inventory' ? queryParams : ''}`, { headers: { Authorization: `Bearer ${token}` }});
+        const invRes = await fetch(`${API_BASE_URL}/inventory${activeTab === 'Inventory' ? queryParams : ''}`, { headers: { Authorization: `Bearer ${token}` }});
         if (invRes.ok) {
           const invData = await invRes.json();
           setInventory(invData.data || invData); 
@@ -378,7 +379,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
       }
 
       if (activeTab === 'Dashboard' || activeTab === 'Purchase Orders') {
-        const poRes = await fetch(`http://localhost:8000/purchase-orders${activeTab === 'Purchase Orders' ? queryParams : ''}`, { headers: { Authorization: `Bearer ${token}` }});
+        const poRes = await fetch(`${API_BASE_URL}/purchase-orders${activeTab === 'Purchase Orders' ? queryParams : ''}`, { headers: { Authorization: `Bearer ${token}` }});
         if (poRes.ok) {
           const poData = await poRes.json();
           setAllPOs(poData.data || poData);
@@ -388,7 +389,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
       }
 
       if (activeTab === 'Customers') {
-        const cRes = await fetch(`http://localhost:8000/admin/customers${queryParams}`, { headers: { Authorization: `Bearer ${token}` }});
+        const cRes = await fetch(`${API_BASE_URL}/admin/customers${queryParams}`, { headers: { Authorization: `Bearer ${token}` }});
         if (cRes.ok) {
           const cData = await cRes.json();
           setCustomersList(cData.data || cData);
@@ -397,7 +398,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
       }
 
       if (activeTab === 'Activity History') {
-        const logRes = await fetch(`http://localhost:8000/admin/activity-logs${queryParams}`, { headers: { Authorization: `Bearer ${token}` }});
+        const logRes = await fetch(`${API_BASE_URL}/admin/activity-logs${queryParams}`, { headers: { Authorization: `Bearer ${token}` }});
         if (logRes.ok) {
           const logData = await logRes.json();
           setActivityLogs(logData.data || logData);
@@ -406,7 +407,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
       }
 
       if (activeTab === 'Notifications') {
-        const notifRes = await fetch(`http://localhost:8000/notifications${queryParams}`, { headers: { Authorization: `Bearer ${token}` }});
+        const notifRes = await fetch(`${API_BASE_URL}/notifications${queryParams}`, { headers: { Authorization: `Bearer ${token}` }});
         if (notifRes.ok) {
           const notifData = await notifRes.json();
           setTabNotifications(notifData.data || notifData);
@@ -416,7 +417,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
 
       if (activeTab === 'Dashboard') {
         // Fetch Dashboard Analytics
-        const analyticsRes = await fetch("http://localhost:8000/admin/analytics", { headers: { Authorization: `Bearer ${token}` } });
+        const analyticsRes = await fetch(`${API_BASE_URL}/admin/analytics`, { headers: { Authorization: `Bearer ${token}` } });
         if (analyticsRes.ok) setAnalytics(await analyticsRes.json());
       }
 
@@ -434,7 +435,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
       if (!token) return;
 
       try {
-        const prefRes = await fetch("http://localhost:8000/user/preferences", { 
+        const prefRes = await fetch(`${API_BASE_URL}/user/preferences`, { 
           headers: { Authorization: `Bearer ${token}` } 
         });
         
@@ -486,7 +487,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
   const handleApproveUser = async (userId: number) => {
     const token = localStorage.getItem("mswil_token");
     try {
-      const res = await fetch(`http://localhost:8000/admin/approve-user/${userId}`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` }});
+      const res = await fetch(`${API_BASE_URL}/admin/approve-user/${userId}`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` }});
       if (res.ok) fetchDashboardData();
       else alert((await res.json()).detail || "Failed to approve customer.");
     } catch (error) { alert("Network error."); }
@@ -496,7 +497,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
     setIsRevoking(true);
     const token = localStorage.getItem("mswil_token");
     try {
-      const res = await fetch(`http://localhost:8000/admin/revoke-user/${customerToRevoke.id}`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` }});
+      const res = await fetch(`${API_BASE_URL}/admin/revoke-user/${customerToRevoke.id}`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` }});
       if (res.ok) { fetchDashboardData(); setIsRevokeModalOpen(false); }
       else alert((await res.json()).detail || "Failed to revoke customer access.");
     } catch (error) { alert("Network error."); } 
@@ -508,7 +509,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
     setIsDeletingCustomer(true);
     const token = localStorage.getItem("mswil_token");
     try {
-      const res = await fetch(`http://localhost:8000/admin/users/${customerToDelete.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` }});
+      const res = await fetch(`${API_BASE_URL}/admin/users/${customerToDelete.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` }});
       if (res.ok) { fetchDashboardData(); setIsDeleteCustomerModalOpen(false); }
       else setDeleteCustomerError((await res.json()).detail || "Failed to delete customer.");
     } catch (error) { setDeleteCustomerError("Network error."); } 
@@ -520,7 +521,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
     const token = localStorage.getItem("mswil_token");
     if (!token) return;
     try {
-      const response = await fetch(`http://localhost:8000/purchase-orders/${poId}/download?doc_type=${docType}`, { method: "GET", headers: { Authorization: `Bearer ${token}` }});
+      const response = await fetch(`${API_BASE_URL}/purchase-orders/${poId}/download?doc_type=${docType}`, { method: "GET", headers: { Authorization: `Bearer ${token}` }});
       if (response.ok) {
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
@@ -535,7 +536,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
     const token = localStorage.getItem("mswil_token");
     if (!token) return;
     try {
-      const response = await fetch(`http://localhost:8000/admin/purchase-orders/${poId}/invoice`, { method: "PUT", headers: { Authorization: `Bearer ${token}` }});
+      const response = await fetch(`${API_BASE_URL}/admin/purchase-orders/${poId}/invoice`, { method: "PUT", headers: { Authorization: `Bearer ${token}` }});
       if (response.ok) await fetchDashboardData(); 
       else alert((await response.json()).detail || "Failed to generate invoice.");
     } catch (error) { alert("Network error. Could not connect to the server."); }
@@ -547,7 +548,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
     setIsSubmitting(true);
     const token = localStorage.getItem("mswil_token");
     try {
-      const response = await fetch("http://localhost:8000/inventory", {
+      const response = await fetch(`${API_BASE_URL}/inventory`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
@@ -583,7 +584,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
     setIsEditing(true);
     const token = localStorage.getItem("mswil_token");
     try {
-      const response = await fetch(`http://localhost:8000/inventory/${editItem.item_code}`, {
+      const response = await fetch(`${API_BASE_URL}/inventory/${editItem.item_code}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
@@ -604,7 +605,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
     setIsDeleting(true);
     const token = localStorage.getItem("mswil_token");
     try {
-      const response = await fetch(`http://localhost:8000/inventory/${itemToDelete.item_code}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` }});
+      const response = await fetch(`${API_BASE_URL}/inventory/${itemToDelete.item_code}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` }});
       if (response.ok) {
         await fetchDashboardData();
         setIsDeleteModalOpen(false);

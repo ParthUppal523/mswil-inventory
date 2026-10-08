@@ -1,5 +1,6 @@
 "use client";
 
+import { API_BASE_URL } from "@/config";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import AdminDashboard from "@/components/AdminDashboard";
@@ -27,7 +28,7 @@ export default function Dashboard() {
       setRole(payload.role);
 
       // Fetch the most up-to-date First Name for the Avatar
-      fetch("http://localhost:8000/user/profile", {
+      fetch(`${API_BASE_URL}/user/profile`, {
         headers: { Authorization: `Bearer ${token}` }
       })
       .then(res => res.json())

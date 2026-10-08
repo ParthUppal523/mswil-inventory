@@ -1,5 +1,6 @@
 "use client";
 
+import { API_BASE_URL } from "@/config";
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeftIcon, UserIcon, PencilSquareIcon, ShieldCheckIcon, BuildingOfficeIcon } from "@heroicons/react/24/outline";
@@ -59,7 +60,7 @@ export default function Settings() {
 
   const fetchProfileData = async (token: string) => {
     try {
-      const res = await fetch("http://localhost:8000/user/profile", {
+      const res = await fetch(`${API_BASE_URL}/user/profile`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
@@ -83,7 +84,7 @@ export default function Settings() {
 
   const fetchPreferencesData = async (token: string) => {
     try {
-      const res = await fetch("http://localhost:8000/user/preferences", {
+      const res = await fetch(`${API_BASE_URL}/user/preferences`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
@@ -103,7 +104,7 @@ export default function Settings() {
 
     const token = localStorage.getItem("mswil_token");
     try {
-      const res = await fetch("http://localhost:8000/user/profile", {
+      const res = await fetch(`${API_BASE_URL}/user/profile`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
@@ -140,7 +141,7 @@ export default function Settings() {
     setIsUpdatingPassword(true);
     const token = localStorage.getItem("mswil_token");
     try {
-      const res = await fetch("http://localhost:8000/user/security/password", {
+      const res = await fetch(`${API_BASE_URL}/user/security/password`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
@@ -172,7 +173,7 @@ export default function Settings() {
     if (!token) return;
 
     try {
-      const res = await fetch("http://localhost:8000/user/preferences", {
+      const res = await fetch(`${API_BASE_URL}/user/preferences`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ email_notifications: newValue })

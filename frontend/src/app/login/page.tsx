@@ -1,5 +1,6 @@
 "use client";
 
+import { API_BASE_URL } from "@/config";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -44,7 +45,7 @@ export default function Login() {
       formData.append("username", loginUser);
       formData.append("password", loginPass);
 
-      const response = await fetch("http://localhost:8000/login", {
+      const response = await fetch(`${API_BASE_URL}/login`, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: formData,
@@ -73,7 +74,7 @@ export default function Login() {
     setIsRegistering(true);
 
     try {
-      const response = await fetch("http://localhost:8000/register", {
+      const response = await fetch(`${API_BASE_URL}/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
