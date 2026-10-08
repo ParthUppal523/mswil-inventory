@@ -19,11 +19,19 @@ models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="MSWIL Inventory System API")
 
+# Allow local development and the Vercel production frontend via FRONTEND_URL.
+env_origins = [o.strip() for o in os.getenv("FRONTEND_URL", "").split(",") if o.strip()]
+allowed_origins = list(set([
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    *env_origins
+]))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"], # The URL of Next.js app
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"], 
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
