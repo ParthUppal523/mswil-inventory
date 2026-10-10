@@ -805,7 +805,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
             {/* THE COMPOSITE SEARCH BAR */}
             <div className="w-full lg:w-auto">
               {activeTab !== 'Notifications' && (
-                <div className="flex rounded-md shadow-sm w-full lg:min-w-500px">
+                <div className="flex rounded-md shadow-sm w-full lg:min-w-[500px]">
                   {activeTab !== 'Dashboard' && (
                     <select
                       value={searchScope}
@@ -1234,7 +1234,7 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
                                 
                                 <td className={classNames(
                                   "px-6 py-4 text-sm text-gray-500 transition-all duration-200",
-                                  isExpanded ? "whitespace-normal wrap-break-words min-w-250px" : "truncate max-w-xs"
+                                  isExpanded ? "whitespace-normal wrap-break-words min-w-[250px]" : "truncate max-w-xs"
                                 )}>
                                   {item.description || '--'}
                                 </td>
@@ -1490,10 +1490,10 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
                                     </div>
                                   )}
                                 </td>
-                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-200px" : "truncate max-w-150px")}>
+                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-[200px]" : "truncate max-w-[150px]")}>
                                   {po.shipping_address || '--'}
                                 </td>
-                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-200px" : "truncate max-w-150px")}>
+                                <td className={classNames("px-6 py-4 text-sm text-gray-500 transition-all duration-200", isExpanded ? "whitespace-normal min-w-[200px]" : "truncate max-w-[150px]")}>
                                   {po.billing_address || '--'}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap">

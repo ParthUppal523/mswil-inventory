@@ -27,6 +27,14 @@ export default function Login() {
   const [regError, setRegError] = useState("");
   const [regSuccess, setRegSuccess] = useState("");
   const [isRegistering, setIsRegistering] = useState(false);
+  const isEmployeeRegistration = regData.role === "admin";
+
+  const handleRoleChange = (nextRole: string) => {
+    setRegData((prev) => ({
+      ...prev,
+      role: nextRole === "admin" ? "admin" : "customer",
+    }));
+  };
 
   // --- LOGIN HANDLER ---
   const handleLogin = async (e: React.FormEvent) => {
@@ -199,7 +207,7 @@ export default function Login() {
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">Account Type</label>
                 <select 
                   value={regData.role}
-                  onChange={(e) => setRegData({...regData, role: e.target.value})}
+                  onChange={(e) => handleRoleChange(e.target.value)}
                   className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-gray-50 focus:bg-white"
                 >
                   <option value="customer">I am a Client / Customer</option>
@@ -210,33 +218,33 @@ export default function Login() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1.5">First Name</label>
-                  <input required type="text" value={regData.firstName} onChange={(e) => setRegData({...regData, firstName: e.target.value})} className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 bg-gray-50 focus:bg-white" />
+                  <input required type="text" value={regData.firstName} onChange={(e) => setRegData((prev) => ({ ...prev, firstName: e.target.value }))} className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 bg-gray-50 focus:bg-white" />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1.5">Last Name</label>
-                  <input required type="text" value={regData.lastName} onChange={(e) => setRegData({...regData, lastName: e.target.value})} className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 bg-gray-50 focus:bg-white" />
+                  <input required type="text" value={regData.lastName} onChange={(e) => setRegData((prev) => ({ ...prev, lastName: e.target.value }))} className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 bg-gray-50 focus:bg-white" />
                 </div>
               </div>
 
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">Work Email</label>
-                <input required type="email" value={regData.email} onChange={(e) => setRegData({...regData, email: e.target.value})} className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 bg-gray-50 focus:bg-white" />
+                <input required type="email" value={regData.email} onChange={(e) => setRegData((prev) => ({ ...prev, email: e.target.value }))} className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 bg-gray-50 focus:bg-white" />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Organization</label>
-                  <input required type="text" value={regData.company} onChange={(e) => setRegData({...regData, company: e.target.value})} className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 bg-gray-50 focus:bg-white" placeholder="Company Name" />
+                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">{isEmployeeRegistration ? "Organization / Unit" : "Organization"}</label>
+                  <input required type="text" value={regData.company} onChange={(e) => setRegData((prev) => ({ ...prev, company: e.target.value }))} className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 bg-gray-50 focus:bg-white" placeholder={isEmployeeRegistration ? "MSWIL Department / Unit" : "Company Name"} />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Designation</label>
-                  <input required type="text" value={regData.designation} onChange={(e) => setRegData({...regData, designation: e.target.value})} className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 bg-gray-50 focus:bg-white" placeholder="Job Title" />
+                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">{isEmployeeRegistration ? "Department" : "Designation"}</label>
+                  <input required type="text" value={regData.designation} onChange={(e) => setRegData((prev) => ({ ...prev, designation: e.target.value }))} className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 bg-gray-50 focus:bg-white" placeholder={isEmployeeRegistration ? "e.g. Engineering" : "Job Title"} />
                 </div>
               </div>
 
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">Enter Password</label>
-                <input required type="password" value={regData.password} onChange={(e) => setRegData({...regData, password: e.target.value})} className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 bg-gray-50 focus:bg-white" />
+                <input required type="password" value={regData.password} onChange={(e) => setRegData((prev) => ({ ...prev, password: e.target.value }))} className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 bg-gray-50 focus:bg-white" />
               </div>
 
               {regError && <div className="p-3 bg-red-50 text-red-600 text-sm font-medium rounded-lg border border-red-100">{regError}</div>}

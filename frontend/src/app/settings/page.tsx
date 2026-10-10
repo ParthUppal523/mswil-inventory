@@ -232,7 +232,7 @@ export default function Settings() {
         <div className="flex flex-col md:flex-row gap-8 items-start">
           
           {/* THE COLLAPSIBLE SIDEBAR */}
-          <aside className="w-full md:w-72px md:hover:w-64 shrink-0 group transition-[width] duration-500 ease-in-out bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col z-10">
+          <aside className="w-full md:w-[72px] md:hover:w-64 shrink-0 group transition-[width] duration-500 ease-in-out bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col z-10">
             <nav className="flex flex-row md:flex-col py-2 md:w-64 overflow-x-auto md:overflow-hidden">
               <button 
                 onClick={() => setActiveTab("overview")}
