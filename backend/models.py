@@ -121,4 +121,5 @@ class Notification(Base):
     title = Column(String, nullable=False)
     message = Column(String, nullable=False)
     is_read = Column(Boolean, default=False)
+    target_tab = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
