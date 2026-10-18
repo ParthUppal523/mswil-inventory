@@ -34,7 +34,7 @@ To allow technical reviewers to evaluate both role experiences without exposing 
 | 🛡️ **Admin (OMS)** | [**Launch Admin Demo**](https://mswil-portal.vercel.app/login?demo=admin) | `demo.admin` | `Admin@123` | View YTD/MTD KPIs, manage sample inventory, review backorder deficits, approve POs, generate Tax Invoices, and inspect JSON audit logs. |
 | 🏢 **Customer (B2B)** | [**Launch Customer Demo**](https://mswil-portal.vercel.app/login?demo=customer) | `demo_customer` | `Customer@123` | Build multi-item POs with search-as-you-type auto-fill, trigger backorder warnings, track order statuses, and download PO/Invoice PDFs. |
 
-> **⏳ Note on Cloud Cold Starts:** The FastAPI backend is hosted on Render's free web service tier, which spins down after 15 minutes of inactivity. The initial sign-in request may take **30–50 seconds** while the container wakes up.
+> **⏳ Note on Cloud Cold Starts:** The initial sign-in request may take **30–50 seconds** while the container wakes up.
 
 ---
 
