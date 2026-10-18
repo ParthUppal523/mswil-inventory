@@ -1,11 +1,13 @@
 "use client";
 
 import { API_BASE_URL } from "@/config";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
-export default function Login() {
+function LoginContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const demoRole = searchParams.get("demo"); // Reads ?demo=admin or ?demo=customer
   const [isLoginView, setIsLoginView] = useState(true);
 
   // --- LOGIN STATE ---
@@ -13,6 +15,18 @@ export default function Login() {
   const [loginPass, setLoginPass] = useState("");
   const [loginError, setLoginError] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  useEffect(() => {
+    if (demoRole === "admin") {
+      setIsLoginView(true);
+      setLoginUser("demo.admin");
+      setLoginPass("Admin@123");
+    } else if (demoRole === "customer") {
+      setIsLoginView(true);
+      setLoginUser("demo_customer");
+      setLoginPass("Customer@123");
+    }
+  }, [demoRole]);
 
   // --- REGISTRATION STATE ---
   const [regData, setRegData] = useState({
@@ -159,6 +173,14 @@ export default function Login() {
           {isLoginView ? (
             <form onSubmit={handleLogin} className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
               <h2 className="text-2xl font-bold text-gray-900 mb-6">Welcome back</h2>
+              {(demoRole === "admin" || demoRole === "customer") && (
+                <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900 mb-4">
+                  <p className="font-bold text-emerald-800">Portfolio Reviewer Mode Active</p>
+                  <p className="mt-1 text-emerald-700">
+                    Pre-filled credentials for <strong>{demoRole === "admin" ? "demo.admin (Admin OMS)" : "demo_customer (B2B Client)"}</strong>. Click <strong>Sign In</strong> below to explore the isolated sandbox.
+                  </p>
+                </div>
+              )}
               
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">Login ID / Username</label>
@@ -263,5 +285,13 @@ export default function Login() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function Login() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-gray-50 text-emerald-800 font-semibold">Loading Portal...</div>}>
+      <LoginContent />
+    </Suspense>
   );
 }

@@ -134,6 +134,20 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
   const [activeTab, setActiveTab] = useState('Dashboard');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const isDeepLink = useRef(false);
+
+  const [isDemoAdmin, setIsDemoAdmin] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem("mswil_token");
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        if (payload.sub === "demo.admin") {
+          setIsDemoAdmin(true);
+        }
+      } catch (e) {}
+    }
+  }, []);
   
   // --- GLOBAL SEARCH & ADVANCED FILTER STATES ---
   const [searchQuery, setSearchQuery] = useState('');
@@ -616,6 +630,14 @@ export default function AdminDashboard({ handleLogout, userInitial }: { handleLo
 
   return (
     <div className="min-h-screen bg-gray-100">
+      {isDemoAdmin && (
+        <div className="bg-amber-500 text-white px-4 py-2 text-center text-xs sm:text-sm font-semibold shadow-sm flex items-center justify-center gap-2">
+          <span>⚠️</span>
+          <span>
+            DEMO ENVIRONMENT (demo.admin): All inventory quantities, prices, purchase orders, and revenue metrics shown here are isolated sample data for demo purposes only.
+          </span>
+        </div>
+      )}
       
       <div className="bg-indigo-600 pb-32">
         <Disclosure as="nav" className="border-b border-indigo-500/25 bg-indigo-600">

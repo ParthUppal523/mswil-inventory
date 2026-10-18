@@ -90,6 +90,20 @@ export default function CustomerDashboard({ handleLogout, userInitial }: { handl
   const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
   const [inventoryList, setInventoryList] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
+
+  const [isDemoCustomer, setIsDemoCustomer] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem("mswil_token");
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        if (payload.sub === "demo_customer") {
+          setIsDemoCustomer(true);
+        }
+      } catch (e) {}
+    }
+  }, []);
   
   // --- GLOBAL SEARCH & ADVANCED FILTER STATES ---
   const [searchQuery, setSearchQuery] = useState('');
@@ -468,6 +482,14 @@ export default function CustomerDashboard({ handleLogout, userInitial }: { handl
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {isDemoCustomer && (
+        <div className="bg-amber-500 text-white px-4 py-2 text-center text-xs sm:text-sm font-semibold shadow-sm flex items-center justify-center gap-2">
+          <span>⚠️</span>
+          <span>
+            DEMO ENVIRONMENT (demo_customer): You are interacting with isolated sample inventory and purchase orders for portfolio evaluation purposes only.
+          </span>
+        </div>
+      )}
       
       {/* EMERALD OVERLAPPING HEADER */}
       <div className={classNames("bg-emerald-700 transition-all duration-300", activeTab === 'Dashboard' ? "pb-64" : "pb-32")}>

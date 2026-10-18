@@ -35,6 +35,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- DEMO SANDBOX ISOLATION HELPERS ---
+DEMO_USERNAMES = {"demo_customer", "demo.admin"}
+DEMO_ITEM_CODE_MIN = 1000000  # Assumes sample inventory items have item_code >= 1000000
+
+def is_demo_user(user: models.User) -> bool:
+    return user is not None and user.username in DEMO_USERNAMES
+
 @app.post("/login", response_model=schemas.Token)
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     """Authenticates a user and hands them a JWT token."""
@@ -163,6 +170,10 @@ def get_all_customers(
 ):
     """Admin workflow: Fetch customer details"""
     query = db.query(models.User).filter(models.User.role == "customer")
+    if is_demo_user(admin_user):
+        query = query.filter(models.User.username == "demo_customer")
+    else:
+        query = query.filter(models.User.username != "demo_customer")
     
     if status == "approved": query = query.filter(models.User.is_approved == True)
     elif status == "pending": query = query.filter(models.User.is_approved == False)
@@ -306,6 +317,10 @@ def get_all_inventory(
 ):
     """Workflow: Fetch paginated items with server-side filtering."""
     query = db.query(models.InventoryItem)
+    if is_demo_user(current_user):
+        query = query.filter(models.InventoryItem.item_code >= DEMO_ITEM_CODE_MIN)
+    else:
+        query = query.filter(models.InventoryItem.item_code < DEMO_ITEM_CODE_MIN)
     
     # 1. Apply Status Filter
     if status == "in_stock":
@@ -621,6 +636,12 @@ def get_activity_logs(
 ):
     """Admin workflow: Fetch the immutable audit trail."""
     query = db.query(models.AdminActivityLog)
+    if is_demo_user(admin_user):
+        query = query.filter(models.AdminActivityLog.admin_id == admin_user.id)
+    else:
+        demo_admin = db.query(models.User).filter(models.User.username == "demo.admin").first()
+        if demo_admin:
+            query = query.filter(models.AdminActivityLog.admin_id != demo_admin.id)
     
     if status and status != "all":
         query = query.filter(models.AdminActivityLog.action_type.ilike(status))
@@ -779,9 +800,16 @@ def get_purchase_orders(
     """Fetch paginated POs with server-side aggregation and filtering."""
     query = db.query(models.PurchaseOrder)
 
-    # Role-Based Security Filter
+    # Role-Based & Demo Sandbox Isolation Filter
+    demo_cust = db.query(models.User).filter(models.User.username == "demo_customer").first()
+    demo_cust_id = demo_cust.id if demo_cust else -1
+
     if current_user.role != "admin":
         query = query.filter(models.PurchaseOrder.customer_id == current_user.id)
+    elif is_demo_user(current_user):
+        query = query.filter(models.PurchaseOrder.customer_id == demo_cust_id)
+    else:
+        query = query.filter(models.PurchaseOrder.customer_id != demo_cust_id)
 
     # Apply Status Filter
     if status and status != "all":
@@ -978,7 +1006,14 @@ def get_admin_analytics(
     
     current_year = datetime.now().year
     current_month = datetime.now().month
-    pos = db.query(models.PurchaseOrder).all()
+
+    demo_cust = db.query(models.User).filter(models.User.username == "demo_customer").first()
+    demo_cust_id = demo_cust.id if demo_cust else -1
+
+    if is_demo_user(admin_user):
+        pos = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.customer_id == demo_cust_id).all()
+    else:
+        pos = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.customer_id != demo_cust_id).all()
     
     # 1. Initialize KPI Counters
     kpis = {
@@ -1017,19 +1052,34 @@ def get_admin_analytics(
             kpis["backordered_count"] += 1
             kpis["backordered_value"] += po.total_amount
 
-    # 3. Process Inventory Warnings (< 10 units)
-    kpis["low_stock_count"] = db.query(models.InventoryItem).filter(models.InventoryItem.quantity < 10).count()
-    
-    # 4. Process Pending Customers
-    kpis["pending_customers"] = db.query(models.User).filter(
-        models.User.role == "customer", 
-        models.User.is_approved == False
+    # 3. Process Inventory Warnings (< 10 units) scoped by Demo vs Real
+    inv_Filter = (
+        models.InventoryItem.item_code >= DEMO_ITEM_CODE_MIN
+        if is_demo_user(admin_user)
+        else models.InventoryItem.item_code < DEMO_ITEM_CODE_MIN
+    )
+    kpis["low_stock_count"] = db.query(models.InventoryItem).filter(
+        inv_Filter, models.InventoryItem.quantity < 10
     ).count()
     
-    # 5. Build Top 5 Fast-Moving Items Chart
-    po_items = db.query(models.PurchaseOrderItem).join(models.PurchaseOrder).filter(
+    # 4. Process Pending Customers scoped by Demo vs Real
+    if is_demo_user(admin_user):
+        kpis["pending_customers"] = 0
+    else:
+        kpis["pending_customers"] = db.query(models.User).filter(
+            models.User.role == "customer", 
+            models.User.is_approved == False,
+            models.User.username != "demo_customer"
+        ).count()
+    
+    # 5. Build Top 5 Fast-Moving Items Chart scoped by Demo vs Real
+    po_items_query = db.query(models.PurchaseOrderItem).join(models.PurchaseOrder).filter(
         models.PurchaseOrder.status.in_(["Approved", "Invoiced"])
-    ).all()
+    )
+    if is_demo_user(admin_user):
+        po_items = po_items_query.filter(models.PurchaseOrder.customer_id == demo_cust_id).all()
+    else:
+        po_items = po_items_query.filter(models.PurchaseOrder.customer_id != demo_cust_id).all()
     
     item_sales = {}
     for po_item in po_items:
