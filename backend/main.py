@@ -596,7 +596,7 @@ def approve_backordered_po(
                 "code": i.item_code, 
                 "name": inv_item.item_name if inv_item else f"Item #{i.item_code}", 
                 "quantity": i.ordered_quantity, 
-                "price": i.price_at_order
+                "price": i.unit_price # price_at_order
             })
 
         po_file = f"purchase_orders/PO_{po.id}_{customer.username}.pdf"
@@ -912,7 +912,8 @@ def download_document(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth_utils.get_current_user)
 ):
-    """Endpoint for Admins and Customers to view/download the generated PO or Invoice PDF."""
+    """Endpoint for Admins and Customers to view/download the generated PO or Invoice PDF. 
+       Auto-generates the PDF on-the-fly if missing from disk."""
     
     # 1. Find the PO and the associated customer
     po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == po_id).first()
@@ -920,19 +921,53 @@ def download_document(
         raise HTTPException(status_code=404, detail="Purchase Order not found.")
         
     customer = db.query(models.User).filter(models.User.id == po.customer_id).first()
+    profile = db.query(models.CustomerProfile).filter(models.CustomerProfile.user_id == customer.id).first()
     
-    # 2. Determine which file path to construct based on the doc_type parameter
+    # 2. Determine file path
     if doc_type.lower() == "invoice":
+        os.makedirs("invoices", exist_ok=True)
         file_path = f"invoices/INV_{po_id}_{customer.username}.pdf"
         download_name = f"MSWIL_Invoice_{po_id}.pdf"
+        doc_title = "TAX INVOICE"
     else:
+        os.makedirs("purchase_orders", exist_ok=True)
         file_path = f"purchase_orders/PO_{po_id}_{customer.username}.pdf"
         download_name = f"MSWIL_PO_{po_id}.pdf"
+        doc_title = "PURCHASE ORDER"
     
-    # 3. Check if the file physically exists
+    # 3. Self-Healing Fallback: Generate on-the-fly if missing (e.g., manual SQL insert or container restart)
     if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail=f"The requested {doc_type.upper()} document was not found on the server.")
-        
+        try:
+            po_items = db.query(models.PurchaseOrderItem).filter(models.PurchaseOrderItem.po_id == po.id).all()
+            pdf_item_list = []
+            for item in po_items:
+                inv_item = db.query(models.InventoryItem).filter(models.InventoryItem.item_code == item.item_code).first()
+                pdf_item_list.append({
+                    "code": item.item_code,
+                    "name": inv_item.item_name if inv_item else f"Item #{item.item_code}",
+                    "serial": inv_item.serial_number if inv_item else "",
+                    "quantity": item.ordered_quantity,
+                    "price": item.unit_price
+                })
+            
+            customer_dict = {
+                "company": profile.organization_name if profile else customer.username,
+                "email": customer.email,
+                "gst_number": po.gst_number or (profile.gst_number if profile else "")
+            }
+            address_dict = {
+                "shipping": po.shipping_address or "Standard Delivery",
+                "billing": po.billing_address or "Standard Delivery"
+            }
+            meta_dict = {
+                "buyer_name": f"{customer.first_name} {customer.last_name}".strip() or customer.username,
+                "po_date": po.created_at.strftime('%d-%b-%Y') if po.created_at else datetime.now().strftime('%d-%b-%Y')
+            }
+            
+            pdf_utils.generate_enterprise_pdf(file_path, doc_title, po.id, customer_dict, pdf_item_list, address_dict, meta_dict)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to dynamically generate document: {str(e)}")
+
     # 4. Return the requested file
     return FileResponse(path=file_path, filename=download_name, media_type='application/pdf')
 
