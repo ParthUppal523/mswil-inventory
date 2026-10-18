@@ -1,81 +1,154 @@
-# MSWIL B2B Order Management & Inventory Portal
+<div align="center">
 
-![Next.js](https://img.shields.io/badge/Frontend-Next.js%2014%20(App%20Router)-black?style=for-the-badge&logo=next.js)
-![FastAPI](https://img.shields.io/badge/Backend-FastAPI%20(Python%203)-005571?style=for-the-badge&logo=fastapi)
-![PostgreSQL](https://img.shields.io/badge/Database-Neon%20PostgreSQL-4169E1?style=for-the-badge&logo=postgresql)
-![Tailwind CSS](https://img.shields.io/badge/Styling-Tailwind%20CSS-38Bdf8?style=for-the-badge&logo=tailwindcss)
-![Vercel](https://img.shields.io/badge/Deployment-Vercel%20%2F%20Render-black?style=for-the-badge&logo=vercel)
+# ⚡ MSWIL B2B Order Management & Inventory Portal
 
-A full-stack, cloud-hosted enterprise procurement and inventory control portal engineered for **Motherson Sumi Wiring India Limited (MSWIL)**. The platform bridges corporate OEM clients with internal warehouse and dispatch teams, replacing fragmented email-and-spreadsheet workflows with an auditable, real-time system of record.
+**An enterprise-grade procurement, inventory control, and invoicing system built for Motherson Sumi Wiring India Limited (MSWIL).**
 
----
+[![Next.js](https://img.shields.io/badge/Next.js-App_Router-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)](https://nextjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Neon_Cloud-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://neon.tech/)
+[![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy_2.0-D71F00?style=for-the-badge&logo=sqlalchemy&logoColor=white)](https://www.sqlalchemy.org/)
 
-## 🔗 Quick Links
-* **Live Application:** [https://mswil-portal.vercel.app/](https://mswil-portal.vercel.app/)
-* **GitHub Repository:** [https://github.com/ParthUppal523/mswil-inventory](https://github.com/ParthUppal523/mswil-inventory)
-* **Interactive Demo Walkthrough (Admin):** [Live Admin Portal Sandbox](https://mswil-portal.vercel.app/login?demo=admin)
-* **Interactive Demo Walkthrough (Customer):** [Live Customer Portal Sandbox](https://mswil-portal.vercel.app/login?demo=customer)
-* **Video Demo:** *[Insert YouTube / Loom Link Here]*
+[🌐 **Live Portal**](https://mswil-portal.vercel.app/) &nbsp;•&nbsp; [🛡️ **1-Click Admin Sandbox**](https://mswil-portal.vercel.app/login?demo=admin) &nbsp;•&nbsp; [🛒 **1-Click Customer Sandbox**](https://mswil-portal.vercel.app/login?demo=customer)
+
+</div>
 
 ---
 
-## 🚀 Key Features
+## 📌 Overview
 
-### 1. Secure Authentication & Role-Based Access Control (RBAC)
-* Self-registration pipeline segregating accounts into **Corporate Customers** and **MSWIL Employees**.
-* Administrator approval gate (`is_approved = False` by default) preventing unauthorized access.
-* Stateless JWT authentication (`PyJWT`) paired with adaptive, salted password hashing (`bcrypt`).
+Supply chain workflows in automotive wiring harness manufacturing require tight coordination between corporate OEM purchase orders and live warehouse inventory. Previously, procurement relied on manual email and spreadsheet exchanges, resulting in delayed order confirmations, lack of real-time status tracking, disconnected third-party invoice generation, and fragmented auditing.
 
-### 2. Smart B2B Procurement Engine
-* Real-time search-as-you-type component indexing across automotive wiring parts catalogs.
-* Dynamic cart calculations with automatic Indian Numeral System currency formatting (`en-IN` / ₹ Cr / ₹ L).
-* **Backorder Gating:** Allows forward-ordering against expected production schedules when item demand exceeds live warehouse stock without breaking checkout.
+The **MSWIL Enterprise Portal** replaces these manual bottlenecks with a single, role-based system of record. Corporate clients can search live inventory, submit multi-item Purchase Orders (POs), and download GST-compliant Tax Invoices, while MSWIL administrators manage stock, resolve backorder deficits, and audit every state change in real time.
 
-### 3. Order Fulfilment & Atomic Invoicing
-* Admin review queue featuring an interactive **Deficit Resolution Modal** that computes precise stock shortfalls.
-* **Atomic Transactions:** Invoicing executes as a single ACID transaction ensuring stock quantities decrement safely alongside order status updates and audit insertions with full rollbacks on failure.
+---
 
-### 4. Automated Document Generation & Notifications
-* Programmatic, server-side generation of tamper-evident, GST-compliant **Tax Invoices** and **Purchase Order copies** using ReportLab.
-* Non-blocking SMTP email dispatch and in-app notifications with deep-linking support (`target_tab`).
+## 🧪 Live Portfolio Sandbox (1-Click Reviewer Access)
 
-### 5. Immutable Security Audit Trail
-* Append-only administrative logging table (`admin_activity_logs`) capturing action types, admin snapshots, and structured before-and-after JSON state deltas.
+To allow technical reviewers to evaluate both role experiences without exposing production records, the live deployment includes an **isolated sandbox environment** (`item_code >= 1000000` and scoped query filters). Clicking either link below automatically loads the pre-configured demo credentials:
+
+| Role View | Direct Autofill Link | Username | Password | Capabilities to Test |
+| :--- | :--- | :--- | :--- | :--- |
+| 🛡️ **Admin (OMS)** | [**Launch Admin Demo**](https://mswil-portal.vercel.app/login?demo=admin) | `demo.admin` | `Admin@123` | View YTD/MTD KPIs, manage sample inventory, review backorder deficits, approve POs, generate Tax Invoices, and inspect JSON audit logs. |
+| 🏢 **Customer (B2B)** | [**Launch Customer Demo**](https://mswil-portal.vercel.app/login?demo=customer) | `demo_customer` | `Customer@123` | Build multi-item POs with search-as-you-type auto-fill, trigger backorder warnings, track order statuses, and download PO/Invoice PDFs. |
+
+> **⏳ Note on Cloud Cold Starts:** The FastAPI backend is hosted on Render's free web service tier, which spins down after 15 minutes of inactivity. The initial sign-in request may take **30–50 seconds** while the container wakes up.
+
+---
+
+## ✨ Key Engineering Features
+
+* 🔐 **Authentication & Role-Based Access Control (RBAC):**
+  * Public registration segregates applicants into **Customer** (`customer`) and **MSWIL Employee** (`admin` — restricted to verified Motherson domains/units) roles.
+  * New accounts default to `is_approved = False` and remain locked until verified by an administrator.
+  * Stateless session management using signed JSON Web Tokens (`PyJWT`) and adaptive salted password hashing (`bcrypt`).
+* 🛒 **Smart B2B Purchase Order Builder:**
+  * Search-as-you-type component lookup by Item Code or Product Name with automatic unit price resolution.
+  * Real-time order valuation and saved GSTIN/address toggling.
+  * **Non-Blocking Backorder Capture:** Unlike retail carts that block checkout when demand exceeds stock, B2B requests exceeding warehouse quantity are recorded with a `Backordered` status for administrative resolution.
+* ⚙️ **3-Stage Order Fulfilment & Atomic Stock Deduction:**
+  * Orders progress strictly through `Backordered` $\rightarrow$ `Approved` $\rightarrow$ `Invoiced`.
+  * Interactive **Deficit Resolution Modal** compares requested line quantities against live warehouse stock (`inventory_items.quantity`), blocking premature approval until deficits are restocked.
+  * Stock deductions, status updates, and audit log insertions execute inside a single **ACID database transaction**.
+* 📄 **Self-Healing PDF Document Engine:**
+  * Programmatic server-side generation of themed **Purchase Orders** (Emerald) and **GST Tax Invoices** with 18% IGST breakdowns (Indigo) using **ReportLab Platypus**.
+  * Includes an on-demand fallback generator that dynamically reconstructs missing PDFs from database records if container storage is wiped on restart.
+* 📊 **Executive & Client Analytics:**
+  * Admin dashboard tracks YTD/MTD invoiced revenue, pending invoice pipelines, backordered values, low-stock warnings (`< 10` units), 6-month trailing revenue trends, order status distributions, and Top 5 fast-moving items.
+  * Customer dashboard displays pipeline order values, backorder metrics, and a Top Purchased Items breakdown.
+* 🕵️ **Immutable Administrative Audit Trail & Deep-Linked Alerts:**
+  * Every administrative `CREATE`, `UPDATE`, `DELETE`, `APPROVE`, `REVOKE`, and `INVOICE` action is logged in `admin_activity_logs` with admin snapshots (`admin_name`, `admin_email`) and exact before/after JSON deltas (`{"price": {"old": 100, "new": 120}}`).
+  * In-app notification center with unread counters, deep-link routing to specific orders/users, and asynchronous background SMTP email alerts via FastAPI `BackgroundTasks`.
 
 ---
 
 ## 🛠️ Technology Stack
 
-| Layer | Technologies Used | Primary Responsibility |
+| Tier | Technologies | Primary Responsibility |
 | :--- | :--- | :--- |
-| **Frontend UI / UX** | Next.js (App Router), TypeScript, Tailwind CSS, Headless UI, Lucide React | Role-aware routing, responsive dashboards, interactive forms, and typed component states. |
-| **Data Visualization** | Recharts | Interactive 6-month revenue trends, status distribution charts, and fast-moving item metrics. |
-| **Backend API** | Python 3, FastAPI, Uvicorn (ASGI), Pydantic v2 | High-concurrency REST endpoints, schema validation, and background task delegation. |
-| **Database & ORM** | PostgreSQL (Neon Cloud), SQLAlchemy 2.0 | Normalized 8-table relational schema, referential cascades, and pessimistic connection pooling (`pool_pre_ping=True`). |
-| **Document Engine** | ReportLab | Programmatic PDF compilation for statutory Tax Invoices and Purchase Orders. |
-| **Cloud Hosting** | Vercel (Frontend), Render (Backend), Neon (Database) | Decoupled continuous deployment pipeline over secure TLS channels (`sslmode=require`). |
+| 🎨 **Frontend UI** | Next.js (App Router), React, TypeScript, Tailwind CSS, Headless UI, Heroicons | Role-aware dashboards, composite search & filter bars, modals, pagination, and state management. |
+| 📈 **Visualization** | Recharts | Responsive line, bar, and donut charts with dynamic currency formatting. |
+| ⚡ **Backend API** | Python 3, FastAPI, Uvicorn (ASGI), Pydantic v2 | RESTful endpoints, declarative request validation, RBAC dependencies, and background tasks. |
+| 🗄️ **Database & ORM** | PostgreSQL (Neon Serverless), SQLAlchemy 2.0, `psycopg2-binary` | Normalized 8-table relational persistence, foreign key cascades, and `pool_pre_ping` connection recovery. |
+| 🔒 **Security & PDF** | `PyJWT`, `bcrypt` / `passlib`, ReportLab | Stateless JWT issuance, salted password hashing, and dynamic PDF document compilation. |
+| ☁️ **Cloud & CI/CD** | Vercel (Frontend), Render (Backend), Neon (Database) | Git-triggered deployments over enforced TLS (`sslmode=require`). |
 
 ---
 
-## 📊 Relational Database Architecture
-The platform is powered by an 8-table normalized schema with strict referential integrity:
-* `users`: Central identity credentials, RBAC roles, and approval flags.
-* `customer_profiles` & `employee_profiles`: 1:1 segregated metadata mapping corporate tax details (GSTIN, addresses) or internal department tags.
-* `inventory_items`: Catalog tracking component codes, serial numbers, stock quantities, and pricing.
-* `purchase_orders` & `purchase_order_items`: 1:N relational order headers and line items storing historical unit price snapshots.
-* `notifications`: In-app alert dispatch table with deep-linking routing capabilities.
-* `admin_activity_logs`: Immutable audit trail recording administrative state alterations as native JSON deltas.
+## 🗂️ Relational Database Schema
+
+The PostgreSQL database is structured across **8 normalized tables** defined in `backend/models.py`:
+
+```text
+users (id, username, email, password_hash, first_name, last_name, role, designation, is_approved, email_notifications)
+ ├── (1:1) ── customer_profiles (id, user_id, organization_name, gst_number, billing_address, shipping_address, contact_phone)
+ ├── (1:1) ── employee_profiles (id, user_id, employee_id_number, department)
+ ├── (1:N) ── purchase_orders (id, customer_id, total_amount, status, shipping_address, billing_address, gst_number, created_at, invoiced_by_id [SET NULL])
+ │             └── (1:N) ── purchase_order_items (id, po_id [CASCADE], item_code, ordered_quantity, unit_price)
+ │                           └── (N:1) ── inventory_items (item_code, item_name, serial_number, quantity, price, description)
+ ├── (1:N) ── notifications (id, recipient_id [CASCADE], title, message, is_read, target_tab, created_at)
+ └── (1:N) ── admin_activity_logs (id, timestamp, admin_id [SET NULL], admin_name, admin_email, action_type, entity_type, entity_id, changes [JSON])
+```
+
+* **Historical Price & Address Snapshots:** `purchase_order_items.unit_price` and `purchase_orders` address/GST fields snapshot values at order creation so subsequent catalog price edits never alter historical invoices.
+* **Audit Persistence:** `admin_activity_logs.admin_id` and `purchase_orders.invoiced_by_id` enforce `ON DELETE SET NULL` alongside text snapshots so audit records remain intact even if a user account is deleted.
 
 ---
 
-## ⚙️ Local Installation & Setup
+## 💻 Local Development Setup
 
 ### Prerequisites
-* Node.js (LTS) & npm
-* Python 3.10+ & pip
-* PostgreSQL or a Neon Cloud Database URL
+* **Node.js** (v18+ LTS) & `npm`
+* **Python** (v3.10+) & `pip`
+* **PostgreSQL** (Local instance or Neon Cloud connection string)
 
 ### 1. Clone the Repository
 ```bash
-git clone [https://github.com/ParthUppal523/mswil-inventory.git](https://github.com/ParthUppal523/mswil-inventory.git)
+git clone https://github.com/ParthUppal523/mswil-inventory.git
 cd mswil-inventory
+```
+
+### 2. Backend Configuration (`backend/`)
+```bash
+cd backend
+python -m venv venv
+
+# Activate virtual environment (Windows):
+venv\Scripts\activate
+# Activate virtual environment (macOS/Linux):
+source venv/bin/activate
+
+pip install -r requirements.txt
+```
+
+Create a `.env` file inside the `backend/` folder:
+```env
+DATABASE_URL="postgresql+psycopg2://<username>:<password>@<host>:5432/<dbname>?sslmode=require"
+JWT_SECRET_KEY="your_super_secret_jwt_signing_key"
+FRONTEND_URL="http://localhost:3000"
+```
+
+Start the FastAPI server:
+```bash
+uvicorn main:app --reload --port 8000
+```
+*Interactive Swagger API documentation will be available at `http://localhost:8000/docs`.*
+
+### 3. Frontend Configuration (`frontend/`)
+Open a new terminal in the `frontend/` directory:
+```bash
+cd frontend
+npm install
+npm run dev
+```
+Open `http://localhost:3000` in your browser.
+
+---
+
+## 👨‍💻 Author
+
+**Parth Uppal**  
+* **Degree:** B.E. in Information Technology (Batch 2024–2028), University Institute of Engineering and Technology (UIET), Panjab University, Chandigarh
+* **GitHub:** [@ParthUppal523](https://github.com/ParthUppal523)
